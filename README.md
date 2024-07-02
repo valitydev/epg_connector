@@ -1,2 +1,2 @@
 # epg_connector
-Postgres connector fot Erlang
+Postgres connector for Erlang
