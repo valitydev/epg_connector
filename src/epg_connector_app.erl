@@ -14,8 +14,8 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    Databases = application:get_env(epg_connector, databases, #{}),
-    ok = maybe_set_secrets(Databases),
+    Databases0 = application:get_env(epg_connector, databases, #{}),
+    Databases = maybe_set_secrets(Databases0),
     Pools = application:get_env(epg_connector, pools, #{}),
     ok = start_pools(Pools, Databases),
     epg_connector_sup:start_link().
@@ -50,13 +50,12 @@ maybe_set_secrets(Databases) ->
             set_secrets(canal:read(Key), Databases);
         Error ->
             logger:error("can`t auth vault client with error: ~p", [Error]),
-            skip
+            Databases
     catch
         _:_ ->
             logger:error("catch exception when auth vault client"),
-            skip
-    end,
-    ok.
+            Databases
+    end.
 
 vault_client_auth(TokenPath) ->
     case read_maybe_linked_file(TokenPath) of
@@ -91,11 +90,11 @@ set_secrets({ok, #{<<"pg_creds">> := #{<<"pg_user">> := PgUser, <<"pg_password">
         }
     end, #{}, Databases),
     application:set_env(epg_connector, databases, NewDbConfig),
-    ok;
+    NewDbConfig;
 set_secrets({ok, #{<<"pg_creds">> := PgCreds}}, Databases) ->
     logger:info("postgres credentials successfuly read from vault (as string)"),
     set_secrets({ok, #{<<"pg_creds">> => jsx:decode(PgCreds, [return_maps])}}, Databases);
-set_secrets(Error, _Databases) ->
+set_secrets(Error, Databases) ->
     logger:error("can`t read postgres credentials from vault with error: ~p", [Error]),
-    skip.
+    Databases.
 
