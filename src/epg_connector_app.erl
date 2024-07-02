@@ -8,8 +8,8 @@
 -behaviour(application).
 
 -define(VAULT_TOKEN_PATH, "/var/run/secrets/kubernetes.io/serviceaccount/token").
--define(VAULT_ROLE, "api-key-mgmt-v2").
--define(VAULT_KEY_PG_CREDS, "api-key-mgmt-v2/pg_creds").
+-define(VAULT_ROLE, "epg_connector").
+-define(VAULT_KEY_PG_CREDS, "epg_connector/pg_creds").
 
 -export([start/2, stop/1]).
 
