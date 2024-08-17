@@ -14,6 +14,7 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
+    _ = maybe_start_canal(application:get_all_env(canal)),
     Databases0 = application:get_env(epg_connector, databases, #{}),
     Databases = maybe_set_secrets(Databases0),
     Pools = application:get_env(epg_connector, pools, #{}),
@@ -24,6 +25,11 @@ stop(_State) ->
     ok.
 
 %% internal functions
+
+maybe_start_canal([]) ->
+    ok;
+maybe_start_canal(_Env) ->
+    _ = application:ensure_all_started(canal).
 
 start_pools(Pools, Databases) ->
     maps:fold(
@@ -61,7 +67,7 @@ vault_client_auth(TokenPath) ->
     case read_maybe_linked_file(TokenPath) of
         {ok, Token} ->
             Role = unicode:characters_to_binary(application:get_env(epg_connector, vault_role, ?VAULT_ROLE)),
-            canal:auth({kubernetes, Role, Token});
+            try_auth(Role, Token);
         Error ->
             Error
     end.
@@ -78,6 +84,14 @@ read_maybe_linked_file(MaybeLinkName) ->
 
 maybe_expand_relative(BaseFilename, Filename) ->
     filename:absname_join(filename:dirname(BaseFilename), Filename).
+
+try_auth(Role, Token) ->
+    try
+        canal:auth({kubernetes, Role, Token})
+    catch
+        _:_ ->
+            {error, {canal, auth_error}}
+    end.
 
 set_secrets({ok, #{<<"pg_creds">> := #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword}}}, Databases) ->
     logger:info("postgres credentials successfuly read from vault (as json)"),
@@ -97,4 +111,3 @@ set_secrets({ok, #{<<"pg_creds">> := PgCreds}}, Databases) ->
 set_secrets(Error, Databases) ->
     logger:error("can`t read postgres credentials from vault with error: ~p", [Error]),
     Databases.
-
