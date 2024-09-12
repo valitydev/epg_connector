@@ -16,9 +16,7 @@
 start(_StartType, _StartArgs) ->
     _ = maybe_start_canal(application:get_all_env(canal)),
     Databases0 = application:get_env(epg_connector, databases, #{}),
-    Databases = maybe_set_secrets(Databases0),
-    Pools = application:get_env(epg_connector, pools, #{}),
-    ok = start_pools(Pools, Databases),
+    _Databases = maybe_set_secrets(Databases0),
     epg_connector_sup:start_link().
 
 stop(_State) ->
@@ -30,21 +28,6 @@ maybe_start_canal([]) ->
     ok;
 maybe_start_canal(_Env) ->
     _ = application:ensure_all_started(canal).
-
-start_pools(Pools, Databases) ->
-    maps:fold(
-        fun(PoolName, Opts, _Acc) ->
-            #{
-                database := DB,
-                size := Size
-            } = Opts,
-            DbParams = maps:get(DB, Databases),
-            {ok, _} = epgsql_pool:start(PoolName, Size, Size, DbParams),
-            ok
-        end,
-        ok,
-        Pools
-    ).
 
 maybe_set_secrets(Databases) ->
     TokenPath = application:get_env(epg_connector, vault_token_path, ?VAULT_TOKEN_PATH),
