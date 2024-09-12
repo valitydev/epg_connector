@@ -24,7 +24,7 @@ query({error, _} = Err, _Pool, _Stmt, _Params) ->
     Err;
 query(Conn, Pool, Stmt, Params) when is_pid(Conn) ->
     Result = epgsql:equery(Conn, Stmt, Params),
-    _ = epg_pool_mgr:checkin(Pool, self(), Conn),
+    ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
 
 transaction(Pool, Fun) when is_atom(Pool) ->
@@ -38,7 +38,7 @@ transaction({error, _} = Err, _Pool, _Fun) ->
     Err;
 transaction(Conn, Pool, Fun) when is_pid(Conn) ->
     Result = epgsql:with_transaction(Conn, Fun),
-    _ = epg_pool_mgr:checkin(Pool, self(), Conn),
+    ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
 
 with(Pool, Fun) when is_atom(Pool) ->
@@ -50,5 +50,5 @@ with(empty, _Pool, _F) ->
     {error, overload};
 with(Conn, Pool, Fun) when is_pid(Conn) ->
     Result = Fun(Conn),
-    _ = epg_pool_mgr:checkin(Pool, self(), Conn),
+    ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.

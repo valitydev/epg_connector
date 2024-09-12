@@ -15,7 +15,8 @@ start_link(PoolName, DbParams, Size, _N) ->
 
 init([PoolName, DbParams, Size]) ->
     erlang:process_flag(trap_exit, true),
-    {ok, #epg_pool_wrk_state{pool = PoolName, params = DbParams, size = Size}, {continue, init}}.
+    State0 = #epg_pool_wrk_state{pool = PoolName, params = DbParams, size = Size},
+    {ok, connect(State0)}.
 
 handle_continue(init, State) ->
     {noreply, connect(State)}.
