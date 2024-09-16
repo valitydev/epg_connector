@@ -8,13 +8,15 @@
 -export([with/2]).
 -export([with/3]).
 
+-define(CHECKOUT_TIMEOUT, 5000).
+
 query(Pool, Stmt) when is_atom(Pool)->
     query(Pool, Stmt, []);
 query(Conn, Stmt) when is_pid(Conn) ->
     epgsql:equery(Conn, Stmt).
 
 query(Pool, Stmt, Params) when is_atom(Pool) ->
-    query(epg_pool_mgr:checkout(Pool), Pool, Stmt, Params);
+    query(get_connection(Pool), Pool, Stmt, Params);
 query(Conn, Stmt, Params) when is_pid(Conn) ->
     epgsql:equery(Conn, Stmt, Params).
 
@@ -28,7 +30,7 @@ query(Conn, Pool, Stmt, Params) when is_pid(Conn) ->
     Result.
 
 transaction(Pool, Fun) when is_atom(Pool) ->
-    transaction(epg_pool_mgr:checkout(Pool), Pool, Fun);
+    transaction(get_connection(Pool), Pool, Fun);
 transaction(Conn, Fun) when is_pid(Conn) ->
     epgsql:with_transaction(Conn, Fun).
 
@@ -42,7 +44,7 @@ transaction(Conn, Pool, Fun) when is_pid(Conn) ->
     Result.
 
 with(Pool, Fun) when is_atom(Pool) ->
-    with(epg_pool_mgr:checkout(Pool), Pool, Fun);
+    with(get_connection(Pool), Pool, Fun);
 with(Conn, Fun) when is_pid(Conn) ->
     Fun(Conn).
 
@@ -52,3 +54,21 @@ with(Conn, Pool, Fun) when is_pid(Conn) ->
     Result = Fun(Conn),
     ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
+%%
+
+get_connection(Pool) ->
+    get_connection(Pool, erlang:system_time(millisecod) + ?CHECKOUT_TIMEOUT).
+
+get_connection(Pool, Deadline) ->
+    Now = erlang:system_time(millisecond),
+    case epg_pool_mgr:checkout(Pool) of
+        empty when Now < Deadline ->
+            timer:sleep(100),
+            get_connection(Pool, Deadline);
+        empty ->
+            {error, overload};
+        {error, _} = Err ->
+            Err;
+        Connection when is_pid(Connection) ->
+            Connection
+    end.
