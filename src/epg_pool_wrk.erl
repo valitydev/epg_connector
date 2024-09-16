@@ -29,9 +29,9 @@ handle_cast(_Request, State = #epg_pool_wrk_state{}) ->
 
 handle_info(
     {'EXIT', Pid, _Info},
-    State = #epg_pool_wrk_state{pool = Pool, connection = Pid}
+    State = #epg_pool_wrk_state{pool = _Pool, connection = Pid}
 ) ->
-    epg_pool_mgr:remove(Pool, self(), Pid),
+    %epg_pool_mgr:remove(Pool, self(), Pid),
     reconnect_timer(),
     {noreply, State#epg_pool_wrk_state{connection = undefined, monitor = undefined}};
 
