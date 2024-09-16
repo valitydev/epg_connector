@@ -57,7 +57,7 @@ with(Conn, Pool, Fun) when is_pid(Conn) ->
 %%
 
 get_connection(Pool) ->
-    get_connection(Pool, erlang:system_time(millisecod) + ?CHECKOUT_TIMEOUT).
+    get_connection(Pool, erlang:system_time(millisecond) + ?CHECKOUT_TIMEOUT).
 
 get_connection(Pool, Deadline) ->
     Now = erlang:system_time(millisecond),
