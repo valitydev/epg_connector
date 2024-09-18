@@ -29,9 +29,10 @@ handle_cast(_Request, State = #epg_pool_wrk_state{}) ->
 
 handle_info(
     {'EXIT', Pid, _Info},
-    State = #epg_pool_wrk_state{pool = _Pool, connection = Pid}
+    State = #epg_pool_wrk_state{pool = Pool, connection = Pid, params = #{database := DB}}
 ) ->
     %epg_pool_mgr:remove(Pool, self(), Pid),
+    logger:error("db connection lost. pool: ~p. database: ~p", [Pool, DB]),
     reconnect_timer(),
     {noreply, State#epg_pool_wrk_state{connection = undefined, monitor = undefined}};
 
@@ -50,10 +51,11 @@ code_change(_OldVsn, State = #epg_pool_wrk_state{}, _Extra) ->
 reconnect_timer() ->
     erlang:start_timer(5000, self(), reconnect).
 
-connect(#epg_pool_wrk_state{pool = Pool, params = Params} = State) ->
+connect(#epg_pool_wrk_state{pool = Pool, params = #{database := DB} = Params} = State) ->
     try epgsql:connect(Params) of
         {ok, Connection} ->
             epg_pool_mgr:add(Pool, self(), Connection),
+            logger:info("db connection established. pool: ~p. database: ~p", [Pool, DB]),
             State#epg_pool_wrk_state{connection = Connection};
         {error, _Reason} ->
             reconnect_timer(),
