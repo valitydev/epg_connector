@@ -51,10 +51,18 @@ init([PoolName, DbParams, Size]) ->
 %%
 
 handle_call(
-    checkout, {Pid, _Ref},
-    State = #epg_pool_mgr_state{owners = Owners}
-) when erlang:is_map_key(Pid, Owners)->
-    {reply, {error, nested_checkout}, State};
+    checkout, {Pid, _},
+    State = #epg_pool_mgr_state{connections = Conns, monitors = Monitors, owners = Owners}
+) when erlang:is_map_key(Pid, Owners) ->
+    {{Ref, Conn}, NewOwners} = maps:take(Pid, Owners),
+    _ = catch erlang:demonitor(Ref),
+    NewConns = queue:delete(Conn, Conns),
+    NewMonitors = demonitor_and_close(Conn, Monitors),
+    {
+        reply,
+        {error, nested_checkout},
+        State#epg_pool_mgr_state{connections = NewConns, monitors = NewMonitors, owners = NewOwners}
+    };
 handle_call(
     checkout, {Pid, _Ref},
     State = #epg_pool_mgr_state{connections = Conns, owners = Owners}
@@ -104,7 +112,7 @@ handle_cast(
         undefined ->
             skip;
         {Ref, _Conn} ->
-            _ = erlang:demonitor(Ref, [flush])
+            _ = erlang:demonitor(Ref)
     end,
     {
         noreply,
