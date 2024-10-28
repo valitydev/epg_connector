@@ -20,8 +20,6 @@ query(Pool, Stmt, Params) when is_atom(Pool) ->
 query(Conn, Stmt, Params) when is_pid(Conn) ->
     epgsql:equery(Conn, Stmt, Params).
 
-query(empty, _Pool, _Stmt, _Params) ->
-    {error, overload};
 query({error, _} = Err, _Pool, _Stmt, _Params) ->
     Err;
 query(Conn, Pool, Stmt, Params) when is_pid(Conn) ->
@@ -34,8 +32,6 @@ transaction(Pool, Fun) when is_atom(Pool) ->
 transaction(Conn, Fun) when is_pid(Conn) ->
     epgsql:with_transaction(Conn, Fun).
 
-transaction(empty, _Pool, _Fun) ->
-    {error, overload};
 transaction({error, _} = Err, _Pool, _Fun) ->
     Err;
 transaction(Conn, Pool, Fun) when is_pid(Conn) ->
@@ -48,8 +44,8 @@ with(Pool, Fun) when is_atom(Pool) ->
 with(Conn, Fun) when is_pid(Conn) ->
     Fun(Conn).
 
-with(empty, _Pool, _F) ->
-    {error, overload};
+with({error, _} = Err, _Pool, _F) ->
+    Err;
 with(Conn, Pool, Fun) when is_pid(Conn) ->
     Result = Fun(Conn),
     ok = epg_pool_mgr:checkin(Pool, self(), Conn),
@@ -63,11 +59,14 @@ get_connection(Pool, Deadline) ->
     Now = erlang:system_time(millisecond),
     case epg_pool_mgr:checkout(Pool) of
         empty when Now < Deadline ->
+            logger:warning("pg pool ~p empty", [Pool]),
             timer:sleep(100),
             get_connection(Pool, Deadline);
         empty ->
+            logger:error("pg pool ~p checkout timeout", [Pool]),
             {error, overload};
-        {error, _} = Err ->
+        {error, Reason} = Err ->
+            logger:error("pg pool ~p error: ~p", [Reason]),
             Err;
         Connection when is_pid(Connection) ->
             Connection
