@@ -123,7 +123,7 @@ If using Vault for secret management, configure the following:
    -export([get_user/1]).
 
    get_user(UserId) ->
-       epgsql_pool:with(default_pool, fun(C) ->
+       epg_pool:with(default_pool, fun(C) ->
            {ok, _, [{Name, Email}]} = epgsql:equery(C, "SELECT name, email FROM users WHERE id = $1", [UserId]),
            {Name, Email}
        end).
