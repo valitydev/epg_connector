@@ -7,24 +7,13 @@
   {git,"https://github.com/epgsql/epgsql.git",
        {ref,"7ba52768cf0ea7d084df24d4275a88eef4db13c2"}},
   0},
- {<<"epgsql_pool">>,
-  {git,"https://github.com/wgnet/epgsql_pool",
-       {ref,"f5e492f73752950aab932a1662536e22fc00c717"}},
-  0},
- {<<"herd">>,
-  {git,"https://github.com/wgnet/herd.git",
-       {ref,"934847589dcf5a6d2b02a1f546ffe91c04066f17"}},
-  0},
  {<<"jsone">>,{pkg,<<"jsone">>,<<"1.8.0">>},1},
- {<<"jsx">>,{pkg,<<"jsx">>,<<"3.1.0">>},0},
- {<<"pooler">>,{pkg,<<"pooler">>,<<"1.5.3">>},1}]}.
+ {<<"jsx">>,{pkg,<<"jsx">>,<<"3.1.0">>},0}]}.
 [
 {pkg_hash,[
  {<<"jsone">>, <<"347FF1FA700E182E1F9C5012FA6D737B12C854313B9AE6954CA75D3987D6C06D">>},
- {<<"jsx">>, <<"D12516BAA0BB23A59BB35DCCAF02A1BD08243FCBB9EFE24F2D9D056CCFF71268">>},
- {<<"pooler">>, <<"898CD1FA301FC42D4A8ED598CE139B71CA85B54C16AB161152B5CC5FBDCFA1A8">>}]},
+ {<<"jsx">>, <<"D12516BAA0BB23A59BB35DCCAF02A1BD08243FCBB9EFE24F2D9D056CCFF71268">>}]},
 {pkg_hash_ext,[
  {<<"jsone">>, <<"08560B78624A12E0B5E7EC0271EC8CA38EF51F63D84D84843473E14D9B12618C">>},
- {<<"jsx">>, <<"0C5CC8FDC11B53CC25CF65AC6705AD39E54ECC56D1C22E4ADB8F5A53FB9427F3">>},
- {<<"pooler">>, <<"058D85C5081289B90E97E4DDDBC3BB5A3B4A19A728AB3BC88C689EFCC36A07C7">>}]}
+ {<<"jsx">>, <<"0C5CC8FDC11B53CC25CF65AC6705AD39E54ECC56D1C22E4ADB8F5A53FB9427F3">>}]}
 ].
