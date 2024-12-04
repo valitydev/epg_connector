@@ -6,9 +6,7 @@
   {applications,
    [kernel,
     stdlib,
-    herd,
-    epgsql,
-    epgsql_pool
+    epgsql
    ]},
   {env,[]},
   {modules, []},
