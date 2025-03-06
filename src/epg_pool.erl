@@ -32,10 +32,19 @@ transaction(Pool, Fun) when is_atom(Pool) ->
 transaction(Conn, Fun) when is_pid(Conn) ->
     epgsql:with_transaction(Conn, Fun).
 
-transaction({error, _} = Err, _Pool, _Fun) ->
+%% FIXME Make transaction funcs API with less confusing MFA
+transaction(Pool, Opts, Fun) when is_atom(Pool) andalso is_list(Opts) ->
+    transaction_(get_connection(Pool), Pool, Fun, Opts);
+transaction(Conn, Opts, Fun) when is_pid(Conn) andalso is_list(Opts) ->
+    epgsql:with_transaction(Conn, Fun, Opts);
+transaction(Conn, Pool, Fun) ->
+    %% NOTE With default transaction opts as in epgsql:with_transaction/2
+    transaction_(Conn, Pool, Fun, [{reraise, false}]).
+
+transaction_({error, _} = Err, _Pool, _Fun, _Opts) ->
     Err;
-transaction(Conn, Pool, Fun) when is_pid(Conn) ->
-    Result = epgsql:with_transaction(Conn, Fun),
+transaction_(Conn, Pool, Fun, Opts) when is_pid(Conn) ->
+    Result = epgsql:with_transaction(Conn, Fun, Opts),
     ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
 
