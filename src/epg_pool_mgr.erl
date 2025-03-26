@@ -123,6 +123,7 @@ handle_cast(
     State = #epg_pool_mgr_state{connections = Conns, owners = Owners, monitors = Monitors}
 ) when erlang:is_map_key(Connection, Monitors) ->
     _ = demonitor_owner(Owner, Owners),
+    _ = maybe_garbage_collect(Connection),
     {
         noreply,
         State#epg_pool_mgr_state{
@@ -353,4 +354,12 @@ connect_ephemeral(
                 [Pool, DB, Reason, Trace]
             ),
             {State, empty}
+    end.
+
+maybe_garbage_collect(Connection) ->
+    case application:get_env(epg_connector, force_garbage_collect, false) of
+        true ->
+            garbage_collect(Connection);
+        _ ->
+            true
     end.
