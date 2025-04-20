@@ -8,7 +8,8 @@
 -export([with/2]).
 -export([with/3]).
 
--define(CHECKOUT_TIMEOUT, 5000).
+-define(CHECKOUT_TIMEOUT, 3000).
+-define(PROTECT_TIMEOUT, 10).
 
 query(Pool, Stmt) when is_atom(Pool)->
     query(Pool, Stmt, []);
@@ -53,15 +54,37 @@ with(Conn, Pool, Fun) when is_pid(Conn) ->
 %%
 
 get_connection(Pool) ->
-    get_connection(Pool, erlang:system_time(millisecond) + ?CHECKOUT_TIMEOUT).
+    get_connection(Pool, ?CHECKOUT_TIMEOUT).
 
-get_connection(Pool, Deadline) ->
+get_connection(Pool, Timeout) ->
+    case application:get_env(epg_connector, async, enabled) of
+        enabled ->
+            get_connection_async(Pool, Timeout);
+        _ ->
+            get_connection_sync(Pool, erlang:system_time(millisecond) + Timeout)
+    end.
+
+get_connection_async(Pool, Timeout) ->
+    TimeoutWithProtection = Timeout + ?PROTECT_TIMEOUT,
+    Ref = make_ref(),
+    epg_pool_mgr:checkout_async(Pool, {self(), Timeout, Ref}),
+    receive
+        {Ref, {error, _} = Error} ->
+            Error;
+        {Ref, Connection} ->
+            Connection
+    after
+        TimeoutWithProtection ->
+            {error, overload}
+    end.
+
+get_connection_sync(Pool, Deadline) ->
     Now = erlang:system_time(millisecond),
     case epg_pool_mgr:checkout(Pool) of
         empty when Now < Deadline ->
             logger:warning("pg pool ~p empty", [Pool]),
             timer:sleep(100),
-            get_connection(Pool, Deadline);
+            get_connection_sync(Pool, Deadline);
         empty ->
             logger:error("pg pool ~p checkout timeout", [Pool]),
             {error, overload};
