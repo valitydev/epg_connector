@@ -7,17 +7,33 @@
     code_change/3]).
 
 -export([checkout/1]).
+-export([checkout_async/2]).
 -export([checkin/3]).
 -export([add/3]).
 -export([remove/3]).
 
--record(epg_pool_mgr_state, {pool, params, size, connections, workers, owners, monitors, ephemerals}).
+-record(epg_pool_mgr_state, {
+    pool,
+    params,
+    size,
+    connections,
+    workers,
+    owners,
+    monitors,
+    ephemerals,
+    requests,
+    requesters
+}).
 
 %% API
 
 checkout(Pool) ->
     RegName = reg_name(Pool, "_pool_mgr"),
     gen_server:call(RegName, checkout).
+
+checkout_async(Pool, {Pid, Timeout, Ref}) ->
+    RegName = reg_name(Pool, "_pool_mgr"),
+    gen_server:cast(RegName, {async_checkout, Pid, Timeout, Ref}).
 
 checkin(Pool, Owner, Connection) ->
     RegName = reg_name(Pool, "_pool_mgr"),
@@ -48,27 +64,20 @@ init([PoolName, DbParams, Size]) ->
         workers = #{},
         owners = #{},
         monitors = #{},
-        ephemerals = #{}
+        ephemerals = #{},
+        requests = queue:new(),
+        requesters = #{}
     }}.
 
 %% nested checkout
 handle_call(
     checkout, {Pid, _},
-    State = #epg_pool_mgr_state{connections = Conns, monitors = Monitors, owners = Owners, ephemerals = Ephemerals}
+    State = #epg_pool_mgr_state{owners = Owners}
 ) when erlang:is_map_key(Pid, Owners) ->
-    {{Ref, Conn}, NewOwners} = maps:take(Pid, Owners),
-    _ = catch erlang:demonitor(Ref),
-    NewConns = queue:delete(Conn, Conns),
-    {NewMonitors, NewEphemerals} = demonitor_and_close(Conn, Monitors, Ephemerals),
     {
         reply,
         {error, nested_checkout},
-        State#epg_pool_mgr_state{
-            connections = NewConns,
-            monitors = NewMonitors,
-            owners = NewOwners,
-            ephemerals = NewEphemerals
-        }
+        process_nested_checkout(Pid, State)
     };
 handle_call(
     checkout, {Pid, _Ref},
@@ -120,16 +129,13 @@ handle_cast(
 %% stable connection checkin
 handle_cast(
     {checkin, Owner, Connection},
-    State = #epg_pool_mgr_state{connections = Conns, owners = Owners, monitors = Monitors}
+    State = #epg_pool_mgr_state{owners = Owners, monitors = Monitors}
 ) when erlang:is_map_key(Connection, Monitors) ->
     _ = demonitor_owner(Owner, Owners),
     _ = maybe_garbage_collect(Connection),
     {
         noreply,
-        State#epg_pool_mgr_state{
-            connections = unique_queue_push(Connection, Conns),
-            owners = maps:without([Owner], Owners)
-        }
+        maybe_async_checkout(Connection, State#epg_pool_mgr_state{owners = maps:without([Owner], Owners)})
     };
 %% ephemeral connection checkin
 handle_cast(
@@ -146,6 +152,44 @@ handle_cast(
             ephemerals = NewEphemerals
         }
     };
+handle_cast({async_checkout, Pid, _TimeoutMS, ReqRef}, #epg_pool_mgr_state{owners = Owners} = State)
+    when erlang:is_map_key(Pid, Owners)
+->
+    Pid ! {ReqRef, {error, nested_checkout}},
+    {noreply, process_nested_checkout(Pid, State)};
+handle_cast(
+    {async_checkout, Pid, TimeoutMS, ReqRef},
+    #epg_pool_mgr_state{connections = Conns, owners = Owners, requests = Requests, requesters = Requesters} = State
+) ->
+    {Result, NewConns} = queue:out(Conns),
+    NewState =
+        case Result of
+            {value, Connection} ->
+                Ref = erlang:monitor(process, Pid),
+                Pid ! {ReqRef, Connection},
+                State#epg_pool_mgr_state{owners = Owners#{Pid => {Ref, Connection}}};
+            empty ->
+                %% try ephemeral connection
+                case maybe_new_connection(Pid, State) of
+                    {State1, empty} ->
+                        Now = erlang:system_time(millisecond),
+                        Deadline = Now + TimeoutMS,
+                        NewRequests = queue:in(
+                            {Pid, Deadline, ReqRef},
+                            Requests
+                        ),
+                        Ref = erlang:monitor(process, Pid),
+                        NewRequesters = Requesters#{Pid => {Ref, Deadline, ReqRef}},
+                        State1#epg_pool_mgr_state{
+                            requests = NewRequests,
+                            requesters = NewRequesters
+                        };
+                    {State1, Connection} ->
+                        Pid ! {ReqRef, Connection},
+                        State1
+                end
+        end,
+    {noreply, NewState#epg_pool_mgr_state{connections = NewConns}};
 handle_cast(_Request, State = #epg_pool_mgr_state{}) ->
     {noreply, State}.
 
@@ -235,6 +279,20 @@ handle_info(
         noreply,
         State#epg_pool_mgr_state{owners = NewOwners, monitors = NewMonitors, ephemerals = NewEphemerals}
     };
+%% async requester down
+handle_info(
+    {'DOWN', _MonitorRef, process, Pid, _Info},
+    State = #epg_pool_mgr_state{
+        requests = Requests,
+        requesters = Requesters
+    }
+) when erlang:is_map_key(Pid, Requesters) ->
+    {{_Ref, Deadline, ReqRef}, NewRequesters} = maps:take(Pid, Requesters),
+    NewRequests = queue:delete({Pid, Deadline, ReqRef}, Requests),
+    {noreply, State#epg_pool_mgr_state{
+        requests = NewRequests,
+        requesters = NewRequesters
+    }};
 handle_info(_Info, State = #epg_pool_mgr_state{}) ->
     {noreply, State}.
 
@@ -362,4 +420,67 @@ maybe_garbage_collect(Connection) ->
             garbage_collect(Connection);
         _ ->
             true
+    end.
+
+process_nested_checkout(
+    Pid,
+    #epg_pool_mgr_state{
+        pool = Pool,
+        connections = Conns,
+        monitors = Monitors,
+        owners = Owners,
+        ephemerals = Ephemerals
+    } = State
+) ->
+    {{Ref, Conn}, NewOwners} = maps:take(Pid, Owners),
+    _ = catch erlang:demonitor(Ref),
+    NewConns = queue:delete(Conn, Conns),
+    {NewMonitors, NewEphemerals} = demonitor_and_close(Conn, Monitors, Ephemerals),
+    logger:error("db nested checkout connection. pool: ~p", [Pool]),
+    State#epg_pool_mgr_state{
+        connections = NewConns,
+        monitors = NewMonitors,
+        owners = NewOwners,
+        ephemerals = NewEphemerals
+    }.
+
+find_request(Requests, Requesters) ->
+    Now = erlang:system_time(millisecond),
+    case queue:out(Requests) of
+        {empty, NewRequests} ->
+            {empty, NewRequests, #{}};
+        {{value, {Pid, Timestamp, _ReqRef}}, NewRequests} when Timestamp =< Now ->
+            {{Ref, _}, NewRequesters} = maps:take(Pid, Requesters),
+            _ = catch erlang:demonitor(Ref),
+            find_request(NewRequests, NewRequesters);
+        {{value, {Pid, _Timestamp, ReqRef}}, NewRequests} ->
+            {{Ref, _, _}, NewRequesters} = maps:take(Pid, Requesters),
+            _ = catch erlang:demonitor(Ref),
+            {Pid, ReqRef, NewRequests, NewRequesters}
+    end.
+
+maybe_async_checkout(
+    Connection,
+    #epg_pool_mgr_state{
+        owners = Owners,
+        requests = Requests,
+        connections = Connections,
+        requesters = Requesters
+    } = State
+) ->
+    case find_request(Requests, Requesters) of
+        {empty, NewRequests, NewRequesters} ->
+            State#epg_pool_mgr_state{
+                connections = unique_queue_push(Connection, Connections),
+                requests = NewRequests,
+                requesters = NewRequesters
+            };
+        {Pid, ReqRef, NewRequests, NewRequesters} ->
+            Pid ! {ReqRef, Connection},
+            Ref = erlang:monitor(process, Pid),
+            State#epg_pool_mgr_state{
+                owners = Owners#{Pid => {Ref, Connection}},
+                requests = NewRequests,
+                requesters = NewRequesters
+            }
     end.
