@@ -8,7 +8,7 @@
 -export([with/2]).
 -export([with/3]).
 
--define(CHECKOUT_TIMEOUT, 3000).
+-define(DEFAULT_CHECKOUT_TIMEOUT, 5000).
 -define(PROTECT_TIMEOUT, 10).
 
 query(Pool, Stmt) when is_atom(Pool)->
@@ -54,7 +54,8 @@ with(Conn, Pool, Fun) when is_pid(Conn) ->
 %%
 
 get_connection(Pool) ->
-    get_connection(Pool, ?CHECKOUT_TIMEOUT).
+    Timeout = application:get_env(epg_connector, checkout_timeout, ?DEFAULT_CHECKOUT_TIMEOUT),
+    get_connection(Pool, Timeout).
 
 get_connection(Pool, Timeout) ->
     case application:get_env(epg_connector, async, enabled) of
@@ -75,6 +76,7 @@ get_connection_async(Pool, Timeout) ->
             Connection
     after
         TimeoutWithProtection ->
+            logger:error("pg pool ~p checkout timeout", [Pool]),
             {error, overload}
     end.
 
