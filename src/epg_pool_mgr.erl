@@ -452,6 +452,7 @@ find_request(Requests, Requesters) ->
         {{value, {Pid, Timestamp, _ReqRef}}, NewRequests} when Timestamp =< Now ->
             {{Ref, _}, NewRequesters} = maps:take(Pid, Requesters),
             _ = catch erlang:demonitor(Ref),
+            logger:warning("async checkout expired by ~p ms", [Now - Timestamp]),
             find_request(NewRequests, NewRequesters);
         {{value, {Pid, _Timestamp, ReqRef}}, NewRequests} ->
             {{Ref, _, _}, NewRequesters} = maps:take(Pid, Requesters),
