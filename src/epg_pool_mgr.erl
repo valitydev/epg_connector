@@ -135,22 +135,17 @@ handle_cast(
     _ = maybe_garbage_collect(Connection),
     {
         noreply,
-        maybe_async_checkout(Connection, State#epg_pool_mgr_state{owners = maps:without([Owner], Owners)})
+        maybe_async_checkout_stable(Connection, State#epg_pool_mgr_state{owners = maps:without([Owner], Owners)})
     };
 %% ephemeral connection checkin
 handle_cast(
     {checkin, Owner, Connection},
-    State = #epg_pool_mgr_state{owners = Owners, ephemerals = Ephemerals, monitors = Monitors}
+    State = #epg_pool_mgr_state{owners = Owners, ephemerals = Ephemerals}
 ) when erlang:is_map_key(Connection, Ephemerals) ->
     _ = demonitor_owner(Owner, Owners),
-    {NewMonitors, NewEphemerals} = demonitor_and_close(Connection, Monitors, Ephemerals),
     {
         noreply,
-        State#epg_pool_mgr_state{
-            owners = maps:without([Owner], Owners),
-            monitors = NewMonitors,
-            ephemerals = NewEphemerals
-        }
+        maybe_async_checkout_ephemeral(Connection, State#epg_pool_mgr_state{owners = maps:without([Owner], Owners)})
     };
 handle_cast({async_checkout, Pid, _TimeoutMS, ReqRef}, #epg_pool_mgr_state{owners = Owners} = State)
     when erlang:is_map_key(Pid, Owners)
@@ -460,7 +455,7 @@ find_request(Requests, Requesters) ->
             {Pid, ReqRef, NewRequests, NewRequesters}
     end.
 
-maybe_async_checkout(
+maybe_async_checkout_stable(
     Connection,
     #epg_pool_mgr_state{
         owners = Owners,
@@ -477,6 +472,36 @@ maybe_async_checkout(
                 requesters = NewRequesters
             };
         {Pid, ReqRef, NewRequests, NewRequesters} ->
+            Pid ! {ReqRef, Connection},
+            Ref = erlang:monitor(process, Pid),
+            State#epg_pool_mgr_state{
+                owners = Owners#{Pid => {Ref, Connection}},
+                requests = NewRequests,
+                requesters = NewRequesters
+            }
+    end.
+
+maybe_async_checkout_ephemeral(
+    Connection,
+    #epg_pool_mgr_state{
+        owners = Owners,
+        ephemerals = Ephemerals,
+        monitors = Monitors,
+        requests = Requests,
+        requesters = Requesters
+    } = State
+) ->
+    case find_request(Requests, Requesters) of
+        {empty, NewRequests, NewRequesters} ->
+            {NewMonitors, NewEphemerals} = demonitor_and_close(Connection, Monitors, Ephemerals),
+            State#epg_pool_mgr_state{
+                monitors = NewMonitors,
+                ephemerals = NewEphemerals,
+                requests = NewRequests,
+                requesters = NewRequesters
+            };
+        {Pid, ReqRef, NewRequests, NewRequesters} ->
+            _ = maybe_garbage_collect(Connection),
             Pid ! {ReqRef, Connection},
             Ref = erlang:monitor(process, Pid),
             State#epg_pool_mgr_state{
