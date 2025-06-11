@@ -93,8 +93,9 @@ update_db_config(Databases) ->
     end, #{}, Databases).
 
 read_secret(DbName) ->
-    Key = "pg_creds/" ++ erlang:atom_to_list(DbName),
-    case canal:read(Key) of
+    DefaultKeyPath = "pg_creds/" ++ erlang:atom_to_list(DbName),
+    KeyPath = application:get_env(epg_connector, vault_secret_key_path, DefaultKeyPath),
+    case canal:read(KeyPath) of
         {ok, #{<<"pg_creds">> := #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword}}} ->
             logger:info("postgres credentials successfuly read from vault (as json)"),
             {ok, {unicode:characters_to_list(PgUser), unicode:characters_to_list(PgPassword)}};
