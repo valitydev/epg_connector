@@ -1,7 +1,7 @@
 {"1.2.0",
 [{<<"canal">>,
   {git,"https://github.com/valitydev/canal",
-       {ref,"621d3821cd0a6036fee75d8e3b2d17167f3268e4"}},
+       {ref,"89faedce3b054bcca7cc31ca64d2ead8a9402305"}},
   0},
  {<<"epgsql">>,
   {git,"https://github.com/epgsql/epgsql.git",
