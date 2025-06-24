@@ -77,7 +77,8 @@ init([PoolName, DbParams, Size]) ->
 
 %% nested checkout
 handle_call(
-    checkout, {Pid, _},
+    checkout,
+    {Pid, _},
     #epg_pool_mgr_state{owners = Owners} = State
 ) when erlang:is_map_key(Pid, Owners) ->
     {
@@ -144,7 +145,9 @@ handle_cast(
     _ = maybe_garbage_collect(Connection),
     {
         noreply,
-        maybe_async_checkout_stable(Connection, State#epg_pool_mgr_state{owners = maps:without([Owner], Owners)})
+        maybe_async_checkout_stable(Connection, State#epg_pool_mgr_state{
+            owners = maps:without([Owner], Owners)
+        })
     };
 %% ephemeral connection checkin
 handle_cast(
@@ -154,16 +157,22 @@ handle_cast(
     _ = demonitor_owner(Owner, Owners),
     {
         noreply,
-        maybe_async_checkout_ephemeral(Connection, State#epg_pool_mgr_state{owners = maps:without([Owner], Owners)})
+        maybe_async_checkout_ephemeral(Connection, State#epg_pool_mgr_state{
+            owners = maps:without([Owner], Owners)
+        })
     };
-handle_cast({async_checkout, Pid, _TimeoutMS, ReqRef}, #epg_pool_mgr_state{owners = Owners} = State)
-    when erlang:is_map_key(Pid, Owners)
+handle_cast(
+    {async_checkout, Pid, _TimeoutMS, ReqRef}, #epg_pool_mgr_state{owners = Owners} = State
+) when
+    erlang:is_map_key(Pid, Owners)
 ->
     Pid ! {ReqRef, {error, nested_checkout}},
     {noreply, process_nested_checkout(Pid, State)};
 handle_cast(
     {async_checkout, Pid, TimeoutMS, ReqRef},
-    #epg_pool_mgr_state{connections = Conns, owners = Owners, requests = Requests, requesters = Requesters} = State
+    #epg_pool_mgr_state{
+        connections = Conns, owners = Owners, requests = Requests, requesters = Requesters
+    } = State
 ) ->
     {Result, NewConns} = queue:out(Conns),
     NewState =
@@ -194,7 +203,7 @@ handle_cast(
                 end
         end,
     {noreply, NewState#epg_pool_mgr_state{connections = NewConns}};
-handle_cast(_Request, State = #epg_pool_mgr_state{}) ->
+handle_cast(_Request, #epg_pool_mgr_state{} = State) ->
     {noreply, State}.
 
 %% worker down

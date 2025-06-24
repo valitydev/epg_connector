@@ -97,10 +97,9 @@ get_connection_async(Pool, Timeout) ->
             Error;
         {Ref, Connection} ->
             Connection
-    after
-        TimeoutWithProtection ->
-            logger:error("pg pool ~p checkout timeout", [Pool]),
-            {error, overload}
+    after TimeoutWithProtection ->
+        logger:error("pg pool ~p checkout timeout", [Pool]),
+        {error, overload}
     end.
 
 get_connection_sync(Pool, Deadline) ->

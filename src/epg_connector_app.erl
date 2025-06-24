@@ -80,19 +80,23 @@ set_secrets(Databases) ->
     DbConfig.
 
 update_db_config(Databases) ->
-    maps:fold(fun(DbName, ConnOpts, Acc) ->
-        case read_secret(DbName) of
-            {ok, {PgUser, PgPassword}} ->
-                Acc#{
-                    DbName => ConnOpts#{
-                        username => unicode:characters_to_list(PgUser),
-                        password => unicode:characters_to_list(PgPassword)
-                    }
-                };
-            {error, _Error} ->
-                Acc#{DbName => ConnOpts}
-         end
-    end, #{}, Databases).
+    maps:fold(
+        fun(DbName, ConnOpts, Acc) ->
+            case read_secret(DbName) of
+                {ok, {PgUser, PgPassword}} ->
+                    Acc#{
+                        DbName => ConnOpts#{
+                            username => unicode:characters_to_list(PgUser),
+                            password => unicode:characters_to_list(PgPassword)
+                        }
+                    };
+                {error, _Error} ->
+                    Acc#{DbName => ConnOpts}
+            end
+        end,
+        #{},
+        Databases
+    ).
 
 read_secret(DbName) ->
     DefaultKeyPath = "pg_creds/" ++ erlang:atom_to_list(DbName),
@@ -103,7 +107,9 @@ read_secret(DbName) ->
             {ok, {unicode:characters_to_list(PgUser), unicode:characters_to_list(PgPassword)}};
         {ok, #{<<"pg_creds">> := PgCreds}} ->
             logger:info("postgres credentials successfuly read from vault (as string)"),
-            #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword} = jsx:decode(PgCreds, [return_maps]),
+            #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword} = jsx:decode(PgCreds, [
+                return_maps
+            ]),
             {ok, {unicode:characters_to_list(PgUser), unicode:characters_to_list(PgPassword)}};
         Error ->
             logger:error("can`t read postgres credentials from vault with error: ~p", [Error]),
