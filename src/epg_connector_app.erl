@@ -9,7 +9,6 @@
 
 -define(VAULT_TOKEN_PATH, "/var/run/secrets/kubernetes.io/serviceaccount/token").
 -define(VAULT_ROLE, "epg_connector").
--define(VAULT_KEY_PG_CREDS, "epg_connector/pg_creds").
 
 -export([start/2, stop/1]).
 
@@ -33,10 +32,7 @@ maybe_set_secrets(Databases) ->
     TokenPath = application:get_env(epg_connector, vault_token_path, ?VAULT_TOKEN_PATH),
     try vault_client_auth(TokenPath) of
         ok ->
-            Key = unicode:characters_to_binary(
-                application:get_env(epg_connector, vault_key_pg_creds, ?VAULT_KEY_PG_CREDS)
-            ),
-            set_secrets(canal:read(Key), Databases);
+            set_secrets(Databases);
         Error ->
             logger:error("can`t auth vault client with error: ~p", [Error]),
             Databases
@@ -78,28 +74,38 @@ try_auth(Role, Token) ->
             {error, {canal, auth_error}}
     end.
 
-set_secrets(
-    {ok, #{<<"pg_creds">> := #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword}}},
-    Databases
-) ->
-    logger:info("postgres credentials successfuly read from vault (as json)"),
-    NewDbConfig = maps:fold(
-        fun(DbName, ConnOpts, Acc) ->
-            Acc#{
-                DbName => ConnOpts#{
-                    username => unicode:characters_to_list(PgUser),
-                    password => unicode:characters_to_list(PgPassword)
-                }
-            }
-        end,
-        #{},
-        Databases
-    ),
-    application:set_env(epg_connector, databases, NewDbConfig),
-    NewDbConfig;
-set_secrets({ok, #{<<"pg_creds">> := PgCreds}}, Databases) ->
-    logger:info("postgres credentials successfuly read from vault (as string)"),
-    set_secrets({ok, #{<<"pg_creds">> => jsx:decode(PgCreds, [return_maps])}}, Databases);
-set_secrets(Error, Databases) ->
-    logger:error("can`t read postgres credentials from vault with error: ~p", [Error]),
-    Databases.
+set_secrets(Databases) ->
+    DbConfig = update_db_config(Databases),
+    application:set_env(epg_connector, databases, DbConfig),
+    DbConfig.
+
+update_db_config(Databases) ->
+    maps:fold(fun(DbName, ConnOpts, Acc) ->
+        case read_secret(DbName) of
+            {ok, {PgUser, PgPassword}} ->
+                Acc#{
+                    DbName => ConnOpts#{
+                        username => unicode:characters_to_list(PgUser),
+                        password => unicode:characters_to_list(PgPassword)
+                    }
+                };
+            {error, _Error} ->
+                Acc#{DbName => ConnOpts}
+         end
+    end, #{}, Databases).
+
+read_secret(DbName) ->
+    DefaultKeyPath = "pg_creds/" ++ erlang:atom_to_list(DbName),
+    KeyPath = application:get_env(epg_connector, vault_secret_key_path, DefaultKeyPath),
+    case canal:read(KeyPath) of
+        {ok, #{<<"pg_creds">> := #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword}}} ->
+            logger:info("postgres credentials successfuly read from vault (as json)"),
+            {ok, {unicode:characters_to_list(PgUser), unicode:characters_to_list(PgPassword)}};
+        {ok, #{<<"pg_creds">> := PgCreds}} ->
+            logger:info("postgres credentials successfuly read from vault (as string)"),
+            #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword} = jsx:decode(PgCreds, [return_maps]),
+            {ok, {unicode:characters_to_list(PgUser), unicode:characters_to_list(PgPassword)}};
+        Error ->
+            logger:error("can`t read postgres credentials from vault with error: ~p", [Error]),
+            {error, Error}
+    end.
