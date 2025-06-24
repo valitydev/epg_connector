@@ -45,7 +45,9 @@ when
 transaction(Conn, Pool, Fun) ->
     with_transaction_(Conn, Pool, Fun, ?DEFAULT_TRANSACTION_OPTS).
 
--spec with_transaction(epgsql:connection() | atom(), fun((epgsql:connection()) -> Reply), epgsql:transaction_opts()) ->
+-spec with_transaction(
+    epgsql:connection() | atom(), fun((epgsql:connection()) -> Reply), epgsql:transaction_opts()
+) ->
     Reply | {rollback, any()} | no_return()
 when
     Reply :: any().

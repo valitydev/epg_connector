@@ -3,15 +3,23 @@
 -behaviour(gen_server).
 
 -export([start_link/3]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-    code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -export([checkout/1]).
 -export([checkin/3]).
 -export([add/3]).
 -export([remove/3]).
 
--record(epg_pool_mgr_state, {pool, params, size, connections, workers, owners, monitors, ephemerals}).
+-record(epg_pool_mgr_state, {
+    pool, params, size, connections, workers, owners, monitors, ephemerals
+}).
 
 %% API
 
@@ -53,8 +61,11 @@ init([PoolName, DbParams, Size]) ->
 
 %% nested checkout
 handle_call(
-    checkout, {Pid, _},
-    State = #epg_pool_mgr_state{connections = Conns, monitors = Monitors, owners = Owners, ephemerals = Ephemerals}
+    checkout,
+    {Pid, _},
+    State = #epg_pool_mgr_state{
+        connections = Conns, monitors = Monitors, owners = Owners, ephemerals = Ephemerals
+    }
 ) when erlang:is_map_key(Pid, Owners) ->
     {{Ref, Conn}, NewOwners} = maps:take(Pid, Owners),
     _ = catch erlang:demonitor(Ref),
@@ -71,7 +82,8 @@ handle_call(
         }
     };
 handle_call(
-    checkout, {Pid, _Ref},
+    checkout,
+    {Pid, _Ref},
     State = #epg_pool_mgr_state{connections = Conns, owners = Owners}
 ) ->
     {Result, NewConns} = queue:out(Conns),
@@ -103,7 +115,9 @@ handle_cast(
     };
 handle_cast(
     {remove, Worker, Connection},
-    State = #epg_pool_mgr_state{connections = Conns, workers = Workers, monitors = Monitors, ephemerals = Ephemerals}
+    State = #epg_pool_mgr_state{
+        connections = Conns, workers = Workers, monitors = Monitors, ephemerals = Ephemerals
+    }
 ) ->
     NewConns = queue:delete(Connection, Conns),
     NewWorkers = maps:without([Worker], Workers),
@@ -232,7 +246,9 @@ handle_info(
     {NewMonitors, NewEphemerals} = demonitor_and_close(Pid, Monitors, Ephemerals),
     {
         noreply,
-        State#epg_pool_mgr_state{owners = NewOwners, monitors = NewMonitors, ephemerals = NewEphemerals}
+        State#epg_pool_mgr_state{
+            owners = NewOwners, monitors = NewMonitors, ephemerals = NewEphemerals
+        }
     };
 handle_info(_Info, State = #epg_pool_mgr_state{}) ->
     {noreply, State}.
@@ -249,19 +265,26 @@ start_workers(Pool, {Min, _Max}) ->
     start_workers(Pool, Min);
 start_workers(Pool, Size) when is_integer(Size) ->
     WorkerSup = reg_name(Pool, "_pool_wrk_sup"),
-    lists:foreach(fun(N) ->
-        supervisor:start_child(WorkerSup, [N])
-    end, lists:seq(1, Size)).
+    lists:foreach(
+        fun(N) ->
+            supervisor:start_child(WorkerSup, [N])
+        end,
+        lists:seq(1, Size)
+    ).
 
 reg_name(Name, Postfix) ->
     list_to_atom(atom_to_list(Name) ++ Postfix).
 
-demonitor_and_close(Connection, Monitors, Ephemerals) when erlang:is_map_key(Connection, Monitors) ->
+demonitor_and_close(Connection, Monitors, Ephemerals) when
+    erlang:is_map_key(Connection, Monitors)
+->
     {MRef, NewMonitors} = maps:take(Connection, Monitors),
     _ = catch erlang:demonitor(MRef),
     _ = catch epgsql:close(Connection),
     {NewMonitors, Ephemerals};
-demonitor_and_close(Connection, Monitors, Ephemerals) when erlang:is_map_key(Connection, Ephemerals) ->
+demonitor_and_close(Connection, Monitors, Ephemerals) when
+    erlang:is_map_key(Connection, Ephemerals)
+->
     {MRef, NewEphemerals} = maps:take(Connection, Ephemerals),
     _ = catch erlang:demonitor(MRef),
     _ = catch epgsql:close(Connection),

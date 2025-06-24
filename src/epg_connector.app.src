@@ -1,16 +1,16 @@
-{application, epg_connector,
- [{description, "An OTP application"},
-  {vsn, "0.1.0"},
-  {registered, []},
-  {mod, {epg_connector_app, []}},
-  {applications,
-   [kernel,
-    stdlib,
-    epgsql
-   ]},
-  {env,[]},
-  {modules, []},
+{application, epg_connector, [
+    {description, "An OTP application"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {epg_connector_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        epgsql
+    ]},
+    {env, []},
+    {modules, []},
 
-  {licenses, ["MIT"]},
-  {links, []}
- ]}.
+    {licenses, ["MIT"]},
+    {links, []}
+]}.

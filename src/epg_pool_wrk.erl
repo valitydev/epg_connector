@@ -3,8 +3,15 @@
 -behaviour(gen_server).
 
 -export([start_link/4]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-    handle_continue/2, code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    handle_continue/2,
+    code_change/3
+]).
 
 %% API
 
@@ -35,7 +42,6 @@ handle_info(
     logger:error("db connection lost. pool: ~p. database: ~p", [Pool, DB]),
     reconnect_timer(50),
     {noreply, State#epg_pool_wrk_state{connection = undefined, monitor = undefined}};
-
 handle_info({timeout, _Ref, reconnect}, State = #epg_pool_wrk_state{}) ->
     {noreply, connect(State)};
 handle_info(_Info, State = #epg_pool_wrk_state{}) ->

@@ -49,7 +49,9 @@ maybe_set_secrets(Databases) ->
 vault_client_auth(TokenPath) ->
     case read_maybe_linked_file(TokenPath) of
         {ok, Token} ->
-            Role = unicode:characters_to_binary(application:get_env(epg_connector, vault_role, ?VAULT_ROLE)),
+            Role = unicode:characters_to_binary(
+                application:get_env(epg_connector, vault_role, ?VAULT_ROLE)
+            ),
             try_auth(Role, Token);
         Error ->
             Error
@@ -76,16 +78,23 @@ try_auth(Role, Token) ->
             {error, {canal, auth_error}}
     end.
 
-set_secrets({ok, #{<<"pg_creds">> := #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword}}}, Databases) ->
+set_secrets(
+    {ok, #{<<"pg_creds">> := #{<<"pg_user">> := PgUser, <<"pg_password">> := PgPassword}}},
+    Databases
+) ->
     logger:info("postgres credentials successfuly read from vault (as json)"),
-    NewDbConfig = maps:fold(fun(DbName, ConnOpts, Acc) ->
-        Acc#{
-            DbName => ConnOpts#{
-                username => unicode:characters_to_list(PgUser),
-                password => unicode:characters_to_list(PgPassword)
+    NewDbConfig = maps:fold(
+        fun(DbName, ConnOpts, Acc) ->
+            Acc#{
+                DbName => ConnOpts#{
+                    username => unicode:characters_to_list(PgUser),
+                    password => unicode:characters_to_list(PgPassword)
+                }
             }
-        }
-    end, #{}, Databases),
+        end,
+        #{},
+        Databases
+    ),
     application:set_env(epg_connector, databases, NewDbConfig),
     NewDbConfig;
 set_secrets({ok, #{<<"pg_creds">> := PgCreds}}, Databases) ->
