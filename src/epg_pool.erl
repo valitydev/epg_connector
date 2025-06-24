@@ -5,13 +5,16 @@
 -export([query/4]).
 -export([transaction/2]).
 -export([transaction/3]).
+-export([with_transaction/3]).
 -export([with/2]).
 -export([with/3]).
 
+%% NOTE With default transaction opts as in epgsql:with_transaction/2
+-define(DEFAULT_TRANSACTION_OPTS, [{reraise, false}]).
 -define(DEFAULT_CHECKOUT_TIMEOUT, 5000).
 -define(PROTECT_TIMEOUT, 10).
 
-query(Pool, Stmt) when is_atom(Pool)->
+query(Pool, Stmt) when is_atom(Pool) ->
     query(Pool, Stmt, []);
 query(Conn, Stmt) when is_pid(Conn) ->
     epgsql:equery(Conn, Stmt).
@@ -28,15 +31,35 @@ query(Conn, Pool, Stmt, Params) when is_pid(Conn) ->
     ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
 
-transaction(Pool, Fun) when is_atom(Pool) ->
-    transaction(get_connection(Pool), Pool, Fun);
-transaction(Conn, Fun) when is_pid(Conn) ->
-    epgsql:with_transaction(Conn, Fun).
+-spec transaction(epgsql:connection() | atom(), fun((epgsql:connection()) -> Reply)) ->
+    Reply | {rollback, any()} | no_return()
+when
+    Reply :: any().
+transaction(ConnOrPool, Fun) ->
+    with_transaction(ConnOrPool, Fun, ?DEFAULT_TRANSACTION_OPTS).
 
-transaction({error, _} = Err, _Pool, _Fun) ->
+-spec transaction(epgsql:connection(), atom(), fun((epgsql:connection()) -> Reply)) ->
+    Reply | {rollback, any()} | no_return()
+when
+    Reply :: any().
+transaction(Conn, Pool, Fun) ->
+    with_transaction_(Conn, Pool, Fun, ?DEFAULT_TRANSACTION_OPTS).
+
+-spec with_transaction(
+    epgsql:connection() | atom(), fun((epgsql:connection()) -> Reply), epgsql:transaction_opts()
+) ->
+    Reply | {rollback, any()} | no_return()
+when
+    Reply :: any().
+with_transaction(Pool, Fun, Opts) when is_atom(Pool) andalso is_function(Fun) ->
+    with_transaction_(get_connection(Pool), Pool, Fun, Opts);
+with_transaction(Conn, Fun, Opts) when is_pid(Conn) andalso is_function(Fun) ->
+    epgsql:with_transaction(Conn, Fun, Opts).
+
+with_transaction_({error, _} = Err, _Pool, _Fun, _Opts) ->
     Err;
-transaction(Conn, Pool, Fun) when is_pid(Conn) ->
-    Result = epgsql:with_transaction(Conn, Fun),
+with_transaction_(Conn, Pool, Fun, Opts) when is_pid(Conn) ->
+    Result = epgsql:with_transaction(Conn, Fun, Opts),
     ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
 
@@ -74,10 +97,9 @@ get_connection_async(Pool, Timeout) ->
             Error;
         {Ref, Connection} ->
             Connection
-    after
-        TimeoutWithProtection ->
-            logger:error("pg pool ~p checkout timeout", [Pool]),
-            {error, overload}
+    after TimeoutWithProtection ->
+        logger:error("pg pool ~p checkout timeout", [Pool]),
+        {error, overload}
     end.
 
 get_connection_sync(Pool, Deadline) ->
