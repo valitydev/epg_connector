@@ -5,12 +5,16 @@
 -export([query/4]).
 -export([transaction/2]).
 -export([transaction/3]).
+-export([with_transaction/3]).
 -export([with/2]).
 -export([with/3]).
 
+%% NOTE With default transaction opts as in epgsql:with_transaction/2
+-define(DEFAULT_TRANSACTION_OPTS, [{reraise, false}]).
+
 -define(CHECKOUT_TIMEOUT, 5000).
 
-query(Pool, Stmt) when is_atom(Pool)->
+query(Pool, Stmt) when is_atom(Pool) ->
     query(Pool, Stmt, []);
 query(Conn, Stmt) when is_pid(Conn) ->
     epgsql:equery(Conn, Stmt).
@@ -27,23 +31,32 @@ query(Conn, Pool, Stmt, Params) when is_pid(Conn) ->
     ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
 
-transaction(Pool, Fun) when is_atom(Pool) ->
-    transaction(get_connection(Pool), Pool, Fun);
-transaction(Conn, Fun) when is_pid(Conn) ->
-    epgsql:with_transaction(Conn, Fun).
+-spec transaction(epgsql:connection() | atom(), fun((epgsql:connection()) -> Reply)) ->
+    Reply | {rollback, any()} | no_return()
+when
+    Reply :: any().
+transaction(ConnOrPool, Fun) ->
+    with_transaction(ConnOrPool, Fun, ?DEFAULT_TRANSACTION_OPTS).
 
-%% FIXME Make transaction funcs API with less confusing MFA
-transaction(Pool, Opts, Fun) when is_atom(Pool) andalso is_list(Opts) ->
-    transaction_(get_connection(Pool), Pool, Fun, Opts);
-transaction(Conn, Opts, Fun) when is_pid(Conn) andalso is_list(Opts) ->
-    epgsql:with_transaction(Conn, Fun, Opts);
+-spec transaction(epgsql:connection(), atom(), fun((epgsql:connection()) -> Reply)) ->
+    Reply | {rollback, any()} | no_return()
+when
+    Reply :: any().
 transaction(Conn, Pool, Fun) ->
-    %% NOTE With default transaction opts as in epgsql:with_transaction/2
-    transaction_(Conn, Pool, Fun, [{reraise, false}]).
+    with_transaction_(Conn, Pool, Fun, ?DEFAULT_TRANSACTION_OPTS).
 
-transaction_({error, _} = Err, _Pool, _Fun, _Opts) ->
+-spec with_transaction(epgsql:connection() | atom(), fun((epgsql:connection()) -> Reply), epgsql:transaction_opts()) ->
+    Reply | {rollback, any()} | no_return()
+when
+    Reply :: any().
+with_transaction(Pool, Fun, Opts) when is_atom(Pool) andalso is_function(Fun) ->
+    with_transaction_(get_connection(Pool), Pool, Fun, Opts);
+with_transaction(Conn, Fun, Opts) when is_pid(Conn) andalso is_function(Fun) ->
+    epgsql:with_transaction(Conn, Fun, Opts).
+
+with_transaction_({error, _} = Err, _Pool, _Fun, _Opts) ->
     Err;
-transaction_(Conn, Pool, Fun, Opts) when is_pid(Conn) ->
+with_transaction_(Conn, Pool, Fun, Opts) when is_pid(Conn) ->
     Result = epgsql:with_transaction(Conn, Fun, Opts),
     ok = epg_pool_mgr:checkin(Pool, self(), Conn),
     Result.
