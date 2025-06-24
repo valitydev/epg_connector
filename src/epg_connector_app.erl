@@ -68,7 +68,8 @@ try_auth(Role, Token) ->
     try
         canal:auth({kubernetes, Role, Token})
     catch
-        _:_ ->
+        _:Error:StackTrace ->
+            logger:error("canal auth error: ~p trace: ~p", [Error, StackTrace]),
             {error, {canal, auth_error}}
     end.
 
