@@ -1,18 +1,32 @@
 services:
+  testrunner:
+    image: $DEV_IMAGE_TAG
+    environment:
+      WORK_DIR: $PWD
+    build:
+      dockerfile: Dockerfile.dev
+      context: .
+      args:
+        OTP_VERSION: $OTP_VERSION
+    volumes:
+      - .:$PWD
+    hostname: epg_connector
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: $PWD
 
   postgres:
     image: postgres:15-bookworm
+    command: -c 'wal_level=logical'
     environment:
-      POSTGRES_DB: "progressor_db"
-      POSTGRES_USER: "progressor"
-      POSTGRES_PASSWORD: "progressor"
-      PGDATA: "/tmp/postgresql/data/pgdata"
-    volumes:
-      - progressor-data:/tmp/postgresql/data
+      POSTGRES_DB: "connector_db"
+      POSTGRES_USER: "connector"
+      POSTGRES_PASSWORD: "connector"
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U progressor -d progressor_db"]
+      test: ["CMD-SHELL", "pg_isready -U connector -d connector_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,6 +37,3 @@ services:
         limits:
           cpus: "1"
           memory: 4G
-
-volumes:
-  progressor-data:
