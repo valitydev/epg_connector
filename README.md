@@ -18,8 +18,6 @@
 - [Logical Replication Protocol](#logical-replication-protocol)
 - [Data Types Support](#data-types-support)
 - [Examples](#examples)
-- [Error Handling](#error-handling)
-- [Contributing](#contributing)
 - [License](#license)
 
 ## Features
@@ -85,13 +83,11 @@ Configure your databases and connection pools in your `sys.config` file:
     {pools, #{
         main_pool => #{
             database => main_db,
-            size => 20,
-            max_overflow => 10
+            size => {20, 50}
         },
         readonly_pool => #{
             database => read_db,
-            size => 10,
-            max_overflow => 5
+            size => 10
         }
     }}
 ]}.
@@ -102,6 +98,8 @@ Configure your databases and connection pools in your `sys.config` file:
 ### Connection Pooling
 
 1. Start the application:
+
+  via *_app.src file
 
    ```erlang
    {applications, [kernel, stdlib, epgsql, epg_connector]}.
@@ -125,11 +123,11 @@ Configure your databases and connection pools in your `sys.config` file:
        end).
 
    create_user(Name, Email) ->
-       epg_pool:with(main_pool, fun(Connection) ->
-           Query = "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id",
-           {ok, _Columns, [{Id}]} = epgsql:equery(Connection, Query, [Name, Email]),
-           {ok, Id}
-       end).
+       epg_pool:query(
+           main_pool,
+           "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id",
+           [Name, Email]
+       ).
    ```
 
 ### Logical Replication
@@ -228,12 +226,12 @@ The connector supports all major PostgreSQL data types:
 
 ### Type Decoding Limitations
 
-Some PostgreSQL types are not automatically decoded and are returned as binary strings:
+Some PostgreSQL types are not automatically decoded and are returned as text representation (binary strings):
 
-- **Extended types**: `cidr`, `inet`, `macaddr`, `macaddr8` - returned as text representation
+- **Extended types**: `cidr`, `inet`, `macaddr`, `macaddr8`
 - **Geometric types**: `point` - returned as text (e.g., `<<"(1,2)">>`)
-- **Range types**: `int4range`, `int8range`, `tsrange`, `tstzrange`, `daterange` - returned as text
-- **Advanced types**: `hstore`, `geometry`, `interval` - returned as text representation
+- **Range types**: `int4range`, `int8range`, `tsrange`, `tstzrange`, `daterange`
+- **Advanced types**: `hstore`, `geometry`, `interval`
 - **Custom types**: User-defined types and enums - returned as text
 
 These types can be parsed manually in your application logic if needed.
@@ -310,20 +308,6 @@ transform_change({TableName, Operation, Data}) ->
         timestamp => os:timestamp()
     }.
 ```
-
-
-
-## Contributing
-
-We welcome contributions to `epg_connector`! Here's how you can help:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Write tests for your changes
-4. Ensure all tests pass (`rebar3 ct`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
 
 ### Development Setup
 
