@@ -12,6 +12,33 @@
 
 -export([start/2, stop/1]).
 
+-export([start_pools/1]).
+
+-type db_ref() :: atom().
+-type db_opts() :: #{
+    host => string(),
+    port => pos_integer(),
+    database => string(),
+    username => string(),
+    password => string()
+}.
+-type databases() :: #{db_ref() := db_opts()}.
+-type pool_name() :: atom().
+-type pool_opts() :: #{
+    database := db_ref(),
+    %% MaxConnections - PermanentConnections = EphemeralConnections
+    size := pos_integer() | {PermanentConnections :: pos_integer(), MaxConnections :: pos_integer()}
+}.
+-type pools() :: #{pool_name() := pool_opts()}.
+-type db_configs() :: #{
+    databases := databases(),
+    pools := pools()
+}.
+
+-export_type([databases/0]).
+-export_type([pools/0]).
+-export_type([db_configs/0]).
+
 start(_StartType, _StartArgs) ->
     _ = maybe_start_canal(application:get_all_env(canal)),
     Databases0 = application:get_env(epg_connector, databases, #{}),
@@ -20,6 +47,11 @@ start(_StartType, _StartArgs) ->
 
 stop(_State) ->
     ok.
+
+-spec start_pools(db_configs()) -> supervisor:startchild_ret().
+start_pools(#{databases := Databases, pools := Pools} = _DbConf) ->
+    ChildSpec = epg_connector_sup:pool_specs(Pools, Databases),
+    supervisor:start_child(epg_connector_sup, ChildSpec).
 
 %% internal functions
 

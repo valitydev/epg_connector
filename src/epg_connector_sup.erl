@@ -10,6 +10,7 @@
 -export([start_link/0]).
 
 -export([init/1]).
+-export([pool_specs/2]).
 
 -define(SERVER, ?MODULE).
 
@@ -27,8 +28,7 @@ init([]) ->
     PoolSpecs = pool_specs(Pools, Databases),
     {ok, {SupFlags, PoolSpecs}}.
 
-%% internal functions
-
+-spec pool_specs(epg_connector_app:pools(), epg_connector_app:databases()) -> supervisor:child_spec().
 pool_specs(Pools, Databases) ->
     maps:fold(
         fun(PoolName, Opts, Acc) ->
