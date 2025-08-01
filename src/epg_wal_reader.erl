@@ -22,7 +22,7 @@
     code_change/3
 ]).
 
--callback handle_replication_data([{inset | delete | update, map()}]) -> ok.
+-callback handle_replication_data([{TableName :: binary(), inset | delete | update, map()}]) -> ok.
 -callback handle_replication_stop(ReplSlot :: string()) -> ok.
 
 -type wal_state() :: #{
@@ -34,6 +34,8 @@
     rows := list(),
     connection => pid()
 }.
+
+-export_type([wal_state/0]).
 
 subscription_create(Subscriber, DbOpts, ReplSlot, ListPublications) ->
     ChildSpec = #{
@@ -96,10 +98,11 @@ handle_cast({pgoutput_msg, _StartLSN, EndLSN, #row_msg{} = RowMsg}, State) ->
     #{tables := Tables, rows := Rows} = State,
     RelationInfo = maps:get(Relidentifier, Tables),
     ColumnsInfo = RelationInfo#relation_msg.columns,
+    TableName = RelationInfo#relation_msg.name,
     Row = aggregate_row(ColumnsInfo, ColumnsValues),
     NewState = State#{
         last_processed_lsn => EndLSN,
-        rows => [{MsgType, Row} | Rows]
+        rows => [{TableName, MsgType, Row} | Rows]
     },
     {noreply, NewState};
 handle_cast(stop, #{connection := Connection}) ->

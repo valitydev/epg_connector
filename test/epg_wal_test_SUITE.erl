@@ -62,7 +62,7 @@ wal_reader_base_test(_C) ->
     )", [<<"POSTGRES">>]),
     {ok, [ReplData1]} = await_replication(),
     ?assertEqual(
-        {insert, #{
+        {<<"t1">>, insert, #{
             <<"bool">> => true,
             <<"bytea">> => <<"POSTGRES">>,
             <<"char">> => 65,
@@ -109,7 +109,7 @@ wal_reader_base_test(_C) ->
     ),
     {ok, [ReplData2]} = await_replication(),
     ?assertEqual(
-        {update,#{
+        {<<"t1">>, update,#{
             <<"bool">> => true,
             <<"bytea">> => <<"POSTGRES">>,
             <<"char">> => 65,
@@ -154,7 +154,7 @@ wal_reader_base_test(_C) ->
     %% DELETE test
     {ok, 1} = epg_pool:query(default_pool, "DELETE FROM t1 where int2 = 32767"),
     {ok, [ReplData3]} = await_replication(),
-    {delete, #{<<"int2">> := 32767}} = ReplData3,
+    {<<"t1">>, delete, #{<<"int2">> := 32767}} = ReplData3,
     _ = unmock_subscriber(),
     {ok, _, _} = epg_pool:query(default_pool, "TRUNCATE TABLE T1"),
     epg_wal_reader:subscription_delete(Reader),

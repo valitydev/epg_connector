@@ -1,9 +1,9 @@
-# epg_connector
+# EPG Connector
 
 [![Erlang/OTP Version](https://img.shields.io/badge/Erlang%2FOTP-21%2B-blue.svg)](http://www.erlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-`epg_connector` is a robust Erlang application that provides a connection pool for PostgreSQL databases with seamless Vault integration for secret management. It simplifies database connection handling and credential management in Erlang applications, making it easier to build scalable and secure database-driven systems.
+`epg_connector` is a high-performance Erlang application that provides PostgreSQL connection pooling and logical replication support. It offers a robust foundation for building scalable database-driven applications with real-time data synchronization capabilities.
 
 ## Table of Contents
 
@@ -11,33 +11,35 @@
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
-  - [Database Configuration](#database-configuration)
-  - [Pool Configuration](#pool-configuration)
-  - [Vault Configuration](#vault-configuration)
+  - [Database and Pool Configuration](#database-and-pool-configuration)
 - [Usage](#usage)
-- [Vault Integration](#vault-integration)
-- [Error Handling and Logging](#error-handling-and-logging)
+  - [Connection Pooling](#connection-pooling)
+  - [Logical Replication](#logical-replication)
+- [Logical Replication Protocol](#logical-replication-protocol)
+- [Data Types Support](#data-types-support)
+- [Examples](#examples)
+- [Error Handling](#error-handling)
 - [Contributing](#contributing)
 - [License](#license)
-- [Acknowledgements](#acknowledgements)
 
 ## Features
 
-- 🚀 Efficient PostgreSQL connection pooling
-- 🔒 Seamless Vault integration for secure secret management
-- ⚙️ Highly configurable database and pool settings
-- 🔑 Automatic credential retrieval from Vault
-- 📊 Built-in error logging and handling
-- 🔌 Easy integration with existing Erlang/OTP applications
+- 🚀 **High-performance PostgreSQL connection pooling** - Efficient connection management with configurable pool sizes
+- 📡 **PostgreSQL Logical Replication** - Real-time data streaming using PostgreSQL's logical replication protocol
+- 🔄 **pgoutput Protocol Support** - Built-in decoder for PostgreSQL's native logical replication output plugin
+- 📊 **Comprehensive Data Type Support** - Handles all PostgreSQL data types including arrays, JSON, timestamps, and custom types
+- ⚙️ **Highly Configurable** - Flexible configuration for pools, databases, and replication settings
+- 🔌 **Easy Integration** - Simple API for existing Erlang/OTP applications
+- 🛡️ **Robust Error Handling** - Comprehensive error handling and logging for production environments
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+Before you begin, ensure you have the following:
 
 - Erlang/OTP 21 or later
 - Rebar3 (build tool for Erlang)
-- PostgreSQL database
-- (Optional) HashiCorp Vault for secret management
+- PostgreSQL 10+ with logical replication enabled
+- Replication slot configured in PostgreSQL (for logical replication)
 
 ## Installation
 
@@ -58,124 +60,283 @@ $ rebar3 compile
 
 ## Configuration
 
-### Database Configuration
+### Database and Pool Configuration
 
-Configure your databases in your `sys.config` file:
-
-```erlang
-{databases, #{
-    default_db => #{
-        host => "127.0.0.1",
-        port => 5432,
-        database => "db_name",
-        username => "postgres",
-        password => "postgres"
-    },
-    another_db => #{
-        host => "db.example.com",
-        port => 5432,
-        database => "another_db",
-        username => "user",
-        password => "pass"
-    }
-}}
-```
-
-### Pool Configuration
-
-Set up your connection pools:
+Configure your databases and connection pools in your `sys.config` file:
 
 ```erlang
-{pools, #{
-    default_pool => #{
-        database => default_db,
-        size => 10
-    },
-    read_only_pool => #{
-        database => another_db,
-        size => 5
-    }
-}}
-```
-
-### Vault Configuration
-
-If using Vault for secret management, configure the following:
-
-```erlang
-{vault_token_path, "/var/run/secrets/kubernetes.io/serviceaccount/token"},
-{vault_role, "epg_connector"},
-{vault_key_pg_creds, "epg_connector/pg_creds"}
+{epg_connector, [
+    {databases, #{
+        main_db => #{
+            host => "127.0.0.1",
+            port => 5432,
+            database => "myapp_production",
+            username => "postgres",
+            password => "postgres"
+        },
+        read_db => #{
+            host => "replica.example.com",
+            port => 5432,
+            database => "myapp_production",
+            username => "readonly_user",
+            password => "readonly_pass"
+        }
+    }},
+    {pools, #{
+        main_pool => #{
+            database => main_db,
+            size => 20,
+            max_overflow => 10
+        },
+        readonly_pool => #{
+            database => read_db,
+            size => 10,
+            max_overflow => 5
+        }
+    }}
+]}.
 ```
 
 ## Usage
 
-1. Ensure `epg_connector` is started with your application:
+### Connection Pooling
+
+1. Start the application:
 
    ```erlang
-   {applications, [kernel, stdlib, epg_connector]}.
+   {applications, [kernel, stdlib, epgsql, epg_connector]}.
    ```
 
-2. Use the connection pool in your code:
+2. Use connection pools in your code:
 
    ```erlang
-   -module(my_db_module).
-   -export([get_user/1]).
+   -module(user_service).
+   -export([get_user/1, create_user/2]).
 
    get_user(UserId) ->
-       epg_pool:with(default_pool, fun(C) ->
-           {ok, _, [{Name, Email}]} = epgsql:equery(C, "SELECT name, email FROM users WHERE id = $1", [UserId]),
-           {Name, Email}
+       epg_pool:with(readonly_pool, fun(Connection) ->
+           Query = "SELECT id, name, email FROM users WHERE id = $1",
+           case epgsql:equery(Connection, Query, [UserId]) of
+               {ok, _Columns, [{Id, Name, Email}]} ->
+                   {ok, #{id => Id, name => Name, email => Email}};
+               {ok, _Columns, []} ->
+                   {error, not_found}
+           end
+       end).
+
+   create_user(Name, Email) ->
+       epg_pool:with(main_pool, fun(Connection) ->
+           Query = "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id",
+           {ok, _Columns, [{Id}]} = epgsql:equery(Connection, Query, [Name, Email]),
+           {ok, Id}
        end).
    ```
 
-## Vault Integration
+### Logical Replication
 
-When Vault is configured, `epg_connector` automatically attempts to retrieve database credentials on startup. This process involves:
+1. Implement the replication callback behavior:
 
-1. Reading the Vault token from the specified path
-2. Authenticating with Vault using the configured role
-3. Fetching the database credentials from the specified Vault key
-4. Updating the database configuration with the retrieved credentials
+   ```erlang
+   -module(user_replication_handler).
+   -behaviour(epg_wal_reader).
 
-Ensure your Vault is properly set up and the application has the necessary permissions to access the secrets.
+   -export([handle_replication_data/1, handle_replication_stop/1]).
 
-## Error Handling and Logging
+   handle_replication_data(Changes) ->
+       lists:foreach(fun process_change/1, Changes),
+       ok.
 
-`epg_connector` includes comprehensive error handling and logging:
+   handle_replication_stop(ReplicationSlot) ->
+       logger:info("Replication stopped for slot: ~p", [ReplicationSlot]),
+       ok.
 
-- Vault authentication failures are logged with detailed error messages
-- Credential retrieval issues are captured and reported
-- Database connection errors are logged for easy troubleshooting
+   process_change({<<"users">>, insert, UserData}) ->
+       logger:info("New user created: ~p", [UserData]);
+   process_change({<<"users">>, update, UserData}) ->
+       logger:info("User updated: ~p", [UserData]);
+   process_change({<<"users">>, delete, UserData}) ->
+       logger:info("User deleted: ~p", [UserData]);
+   process_change({TableName, Operation, Data}) ->
+       logger:info("Change in table ~s: ~p ~p", [TableName, Operation, Data]).
+   ```
 
-Monitor your application logs for any configuration or connection issues. Example log message:
+2. Start logical replication:
 
+   ```erlang
+   DbOpts = #{
+       host => "localhost",
+       port => 5432,
+       database => "myapp",
+       username => "replication_user",
+       password => "replication_pass",
+       replication => "database"
+   },
+
+   epg_wal_reader:subscription_create(
+       user_replication_handler,  % Callback module
+       DbOpts,                    % Database connection options
+       "myapp_slot",             % Replication slot name
+       ["user_changes"]          % Publications to subscribe to
+   ).
+   ```
+
+## Logical Replication Protocol
+
+`epg_connector` implements PostgreSQL's logical replication protocol with support for:
+
+- **pgoutput plugin** - Native PostgreSQL logical replication output format
+- **Real-time streaming** - Continuous WAL (Write-Ahead Log) data streaming
+- **Transaction boundaries** - BEGIN/COMMIT message handling
+- **Schema information** - Automatic relation metadata decoding
+- **Data type conversion** - Automatic conversion of PostgreSQL types to Erlang terms
+
+### Supported Message Types
+
+- `BEGIN` - Transaction start
+- `COMMIT` - Transaction commit
+- `INSERT` - Row insertion
+- `UPDATE` - Row update (with old/new values)
+- `DELETE` - Row deletion
+- `RELATION` - Table schema information
+- `TYPE` - Custom type information
+- `TRUNCATE` - Table truncation
+
+## Data Types Support
+
+The connector supports all major PostgreSQL data types:
+
+### Basic Types
+- **Integers**: `int2`, `int4`, `int8`
+- **Floating Point**: `float4`, `float8`
+- **Text**: `text`, `varchar`, `char`, `bpchar`
+- **Binary**: `bytea`
+- **Boolean**: `bool`
+
+### Date/Time Types
+- **Date**: `date`
+- **Time**: `time`, `timetz`
+- **Timestamp**: `timestamp`, `timestamptz`
+- **Interval**: `interval`
+
+### Advanced Types
+- **JSON**: `json`, `jsonb`
+- **UUID**: `uuid`
+- **Arrays**: All array types (e.g., `int4[]`, `text[]`, `jsonb[][][]`)
+- **Network**: `inet`, `cidr`, `macaddr`
+- **Geometric**: `point`
+- **Range Types**: `int4range`, `int8range`, `tsrange`, `tstzrange`
+
+### Type Decoding Limitations
+
+Some PostgreSQL types are not automatically decoded and are returned as binary strings:
+
+- **Extended types**: `cidr`, `inet`, `macaddr`, `macaddr8` - returned as text representation
+- **Geometric types**: `point` - returned as text (e.g., `<<"(1,2)">>`)
+- **Range types**: `int4range`, `int8range`, `tsrange`, `tstzrange`, `daterange` - returned as text
+- **Advanced types**: `hstore`, `geometry`, `interval` - returned as text representation
+- **Custom types**: User-defined types and enums - returned as text
+
+These types can be parsed manually in your application logic if needed.
+
+## Examples
+
+### Complete Replication Example
+
+```erlang
+-module(order_sync).
+-behaviour(epg_wal_reader).
+
+-export([start/0, handle_replication_data/1, handle_replication_stop/1]).
+
+start() ->
+    DbOpts = #{
+        host => "production-db.example.com",
+        port => 5432,
+        database => "ecommerce",
+        username => "repl_user",
+        password => "secure_password",
+        replication => "database"
+    },
+
+    epg_wal_reader:subscription_create(
+        ?MODULE,
+        DbOpts,
+        "order_replication_slot",
+        ["order_events", "inventory_changes"]
+    ).
+
+handle_replication_data(Changes) ->
+    ProcessedChanges = lists:map(fun transform_change/1, Changes),
+    send_to_analytics_service(ProcessedChanges),
+    update_cache(ProcessedChanges),
+    ok.
+
+handle_replication_stop(SlotName) ->
+    logger:warning("Replication stopped for slot: ~s", [SlotName]),
+    % Implement reconnection logic here
+    ok.
+
+transform_change({<<"orders">>, insert, OrderData}) ->
+    #{
+        event_type => order_created,
+        table => <<"orders">>,
+        order_id => maps:get(<<"id">>, OrderData),
+        customer_id => maps:get(<<"customer_id">>, OrderData),
+        amount => maps:get(<<"total_amount">>, OrderData),
+        timestamp => os:timestamp()
+    };
+transform_change({<<"orders">>, update, OrderData}) ->
+    #{
+        event_type => order_updated,
+        table => <<"orders">>,
+        order_id => maps:get(<<"id">>, OrderData),
+        status => maps:get(<<"status">>, OrderData),
+        timestamp => os:timestamp()
+    };
+transform_change({<<"inventory">>, Operation, Data}) ->
+    #{
+        event_type => inventory_change,
+        table => <<"inventory">>,
+        operation => Operation,
+        data => Data,
+        timestamp => os:timestamp()
+    };
+transform_change({TableName, Operation, Data}) ->
+    #{
+        event_type => generic_change,
+        table => TableName,
+        operation => Operation,
+        data => Data,
+        timestamp => os:timestamp()
+    }.
 ```
-2024-07-24 19:15:30.123 [error] <0.123.0> can't auth vault client with error: {error, permission_denied}
-```
+
+
 
 ## Contributing
 
 We welcome contributions to `epg_connector`! Here's how you can help:
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Write tests for your changes
+4. Ensure all tests pass (`rebar3 ct`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+### Development Setup
+
+```bash
+$ git clone https://github.com/your-repo/epg_connector.git
+$ cd epg_connector
+$ rebar3 get-deps
+$ rebar3 compile
+$ rebar3 ct  # Run tests
+```
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgements
-
-- [epgsql](https://github.com/epgsql/epgsql) - Erlang PostgreSQL client
-- [epgsql_pool](https://github.com/wgnet/epgsql_pool) - Connection pool for epgsql
-- [canal](https://github.com/valitydev/canal) - Erlang Vault client
-
 ---
-
-For more information or support, please [open an issue](https://github.com/your-repo/epg_connector/issues/new) or contact the maintainers.
