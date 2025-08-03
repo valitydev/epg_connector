@@ -22,11 +22,11 @@
     code_change/3
 ]).
 
--callback handle_replication_data([{TableName :: binary(), inset | delete | update, map()}]) -> ok.
--callback handle_replication_stop(ReplSlot :: string()) -> ok.
+-callback handle_replication_data(Ref :: term(), [{TableName :: binary(), inset | delete | update, map()}]) -> ok.
+-callback handle_replication_stop(Ref :: term(), ReplSlot :: string()) -> ok.
 
 -type wal_state() :: #{
-    subscriber := module(),
+    subscriber := {module(), Ref :: term()},
     repl_slot := string(),
     db_opts := epgsql:connect_opts_map(),
     publications := [string()],
@@ -82,8 +82,8 @@ handle_call(_Request, _From, State) ->
 handle_cast({pgoutput_msg, _StartLSN, EndLSN, #commit_msg{}}, #{rows := []} = State) ->
     {noreply, State#{last_processed_lsn => EndLSN}};
 handle_cast({pgoutput_msg, _StartLSN, EndLSN, #commit_msg{}}, #{rows := Rows} = State) ->
-    #{subscriber := Subscriber} = State,
-    ok = Subscriber:handle_replication_data(Rows),
+    #{subscriber := {Mod, Ref}} = State,
+    ok = Mod:handle_replication_data(Ref, Rows),
     {noreply, State#{last_processed_lsn => EndLSN, rows => []}};
 handle_cast({pgoutput_msg, _StartLSN, EndLSN, #relation_msg{} = RelationInfo}, State) ->
     Relidentifier = RelationInfo#relation_msg.id,
@@ -113,8 +113,8 @@ handle_cast(stop, _State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({'EXIT', Pid, _Info}, #{connection := Pid, repl_slot := ReplSlot, subscriber := Subscriber}) ->
-    ok = Subscriber:handle_replication_stop(ReplSlot),
+handle_info({'EXIT', Pid, _Info}, #{connection := Pid, repl_slot := ReplSlot, subscriber := {Mod, Ref}}) ->
+    ok = Mod:handle_replication_stop(Ref, ReplSlot),
     exit(normal);
 handle_info(_Info, State) ->
     {noreply, State}.

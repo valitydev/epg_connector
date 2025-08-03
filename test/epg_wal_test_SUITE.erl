@@ -34,7 +34,7 @@ wal_reader_base_test(_C) ->
     Publication = "default/default",
     ReplSlot = "test_repl_slot",
     DbOpts = epg_ct_hook:db_opts(),
-    Subscriber = epg_mock_subscriber,
+    Subscriber = {epg_mock_subscriber, self()},
     {ok, Reader} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication]),
     %% INSERT test
     {ok, 1} = epg_pool:query(default_pool, "INSERT INTO t1 (
@@ -166,7 +166,7 @@ wal_connection_lost_test(_C) ->
     Publication = "default/default",
     ReplSlot = "test_repl_slot",
     DbOpts = epg_ct_hook:db_opts(),
-    Subscriber = epg_mock_subscriber,
+    Subscriber = {epg_mock_subscriber, self()},
     {ok, Reader} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication]),
     {ok, ReplConnection} = gen_server:call(Reader, get_connection),
     ok = epgsql:close(ReplConnection),
@@ -187,8 +187,8 @@ mock_subscriber() ->
     meck:expect(
         epg_mock_subscriber,
         handle_replication_data,
-        fun(ReplData) ->
-            V = meck:passthrough([ReplData]),
+        fun(Ref, ReplData) ->
+            V = meck:passthrough([Ref, ReplData]),
             Self ! {repl_data, ReplData},
             V
         end
@@ -196,8 +196,8 @@ mock_subscriber() ->
     meck:expect(
         epg_mock_subscriber,
         handle_replication_stop,
-        fun(ReplSlot) ->
-            V = meck:passthrough([ReplSlot]),
+        fun(Ref, ReplSlot) ->
+            V = meck:passthrough([Ref, ReplSlot]),
             Self ! {repl_stop, ReplSlot},
             V
         end
