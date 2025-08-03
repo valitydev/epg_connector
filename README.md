@@ -138,13 +138,13 @@ Configure your databases and connection pools in your `sys.config` file:
    -module(user_replication_handler).
    -behaviour(epg_wal_reader).
 
-   -export([handle_replication_data/1, handle_replication_stop/1]).
+   -export([handle_replication_data/2, handle_replication_stop/2]).
 
-   handle_replication_data(Changes) ->
+   handle_replication_data(_Ref, Changes) ->
        lists:foreach(fun process_change/1, Changes),
        ok.
 
-   handle_replication_stop(ReplicationSlot) ->
+   handle_replication_stop(_Ref, ReplicationSlot) ->
        logger:info("Replication stopped for slot: ~p", [ReplicationSlot]),
        ok.
 
@@ -244,7 +244,7 @@ These types can be parsed manually in your application logic if needed.
 -module(order_sync).
 -behaviour(epg_wal_reader).
 
--export([start/0, handle_replication_data/1, handle_replication_stop/1]).
+-export([start/0, handle_replication_data/2, handle_replication_stop/2]).
 
 start() ->
     DbOpts = #{
@@ -257,19 +257,19 @@ start() ->
     },
 
     epg_wal_reader:subscription_create(
-        ?MODULE,
+        {?MODULE, self()},
         DbOpts,
         "order_replication_slot",
         ["order_events", "inventory_changes"]
     ).
 
-handle_replication_data(Changes) ->
+handle_replication_data(_Ref, Changes) ->
     ProcessedChanges = lists:map(fun transform_change/1, Changes),
     send_to_analytics_service(ProcessedChanges),
     update_cache(ProcessedChanges),
     ok.
 
-handle_replication_stop(SlotName) ->
+handle_replication_stop(_Ref, SlotName) ->
     logger:warning("Replication stopped for slot: ~s", [SlotName]),
     % Implement reconnection logic here
     ok.
