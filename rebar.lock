@@ -5,7 +5,7 @@
   0},
  {<<"epgsql">>,
   {git,"https://github.com/epgsql/epgsql.git",
-       {ref,"7ba52768cf0ea7d084df24d4275a88eef4db13c2"}},
+       {ref,"28e9f84c95065a51e92baeb37d2cf1687fc4b9ce"}},
   0},
  {<<"jsone">>,{pkg,<<"jsone">>,<<"1.8.0">>},1},
  {<<"jsx">>,{pkg,<<"jsx">>,<<"3.1.0">>},0}]}.
