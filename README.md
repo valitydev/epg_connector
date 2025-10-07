@@ -148,13 +148,13 @@ Configure your databases and connection pools in your `sys.config` file:
        logger:info("Replication stopped for slot: ~p", [ReplicationSlot]),
        ok.
 
-   process_change({<<"users">>, insert, UserData}) ->
+   process_change({<<"users">>, insert, UserData, _}) ->
        logger:info("New user created: ~p", [UserData]);
-   process_change({<<"users">>, update, UserData}) ->
+   process_change({<<"users">>, update, UserData, _OldUserData}) ->
        logger:info("User updated: ~p", [UserData]);
-   process_change({<<"users">>, delete, UserData}) ->
+   process_change({<<"users">>, delete, UserData, _}) ->
        logger:info("User deleted: ~p", [UserData]);
-   process_change({TableName, Operation, Data}) ->
+   process_change({TableName, Operation, Data, _OldData}) ->
        logger:info("Change in table ~s: ~p ~p", [TableName, Operation, Data]).
    ```
 
@@ -173,8 +173,9 @@ Configure your databases and connection pools in your `sys.config` file:
    epg_wal_reader:subscription_create(
        user_replication_handler,  % Callback module
        DbOpts,                    % Database connection options
-       "myapp_slot",             % Replication slot name
-       ["user_changes"]          % Publications to subscribe to
+       "myapp_slot",              % Replication slot name
+       ["user_changes"],          % Publications to subscribe to
+       #{slot_type => temporary}  % replication slot options (temporary | persistent)
    ).
    ```
 
@@ -256,11 +257,14 @@ start() ->
         replication => "database"
     },
 
+    Options = #{slot_type => persistent},
+
     epg_wal_reader:subscription_create(
         {?MODULE, self()},
         DbOpts,
         "order_replication_slot",
-        ["order_events", "inventory_changes"]
+        ["order_events", "inventory_changes"],
+        Options
     ).
 
 handle_replication_data(_Ref, Changes) ->
@@ -274,7 +278,7 @@ handle_replication_stop(_Ref, SlotName) ->
     % Implement reconnection logic here
     ok.
 
-transform_change({<<"orders">>, insert, OrderData}) ->
+transform_change({<<"orders">>, insert, OrderData, _}) ->
     #{
         event_type => order_created,
         table => <<"orders">>,
@@ -283,7 +287,7 @@ transform_change({<<"orders">>, insert, OrderData}) ->
         amount => maps:get(<<"total_amount">>, OrderData),
         timestamp => os:timestamp()
     };
-transform_change({<<"orders">>, update, OrderData}) ->
+transform_change({<<"orders">>, update, OrderData, _OldOrderData}) ->
     #{
         event_type => order_updated,
         table => <<"orders">>,
@@ -291,7 +295,7 @@ transform_change({<<"orders">>, update, OrderData}) ->
         status => maps:get(<<"status">>, OrderData),
         timestamp => os:timestamp()
     };
-transform_change({<<"inventory">>, Operation, Data}) ->
+transform_change({<<"inventory">>, Operation, Data, _OldData}) ->
     #{
         event_type => inventory_change,
         table => <<"inventory">>,
@@ -299,7 +303,7 @@ transform_change({<<"inventory">>, Operation, Data}) ->
         data => Data,
         timestamp => os:timestamp()
     };
-transform_change({TableName, Operation, Data}) ->
+transform_change({TableName, Operation, Data, _OldData}) ->
     #{
         event_type => generic_change,
         table => TableName,

@@ -63,38 +63,36 @@ wal_reader_base_test(_C) ->
       'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
     )", [<<"POSTGRES">>]),
     {ok, [ReplData1]} = await_replication(),
-    ?assertEqual(
-        {<<"t1">>, insert, #{
-            <<"bool">> => true,
-            <<"bytea">> => <<"POSTGRES">>,
-            <<"char">> => 65,
-            <<"date">> => {2023,5,15},
-            <<"float4">> => 1.2345679,
-            <<"float8">> => 1.2345678901234567,
-            <<"int2">> => 32767,
-            <<"int4">> => 2147483647,
-            <<"int8">> => 9223372036854775807,
-            <<"json">> => #{
-                <<"active">> => true,
-                <<"age">> => 30,
-                <<"name">> => <<"Alice">>
-            },
-            <<"jsonb">> => #{
-                <<"active">> => false,
-                <<"age">> => 25,
-                <<"name">> => <<"Bob">>
-            },
-            <<"jsonb_array">> => null,
-            <<"text">> => <<"This is a sample text string">>,
-            <<"time">> => {15, 30, 45.123456},
-            <<"timestamp">> => {{2023, 5, 15}, {15, 30, 45}},
-            <<"timestamptz">> => {{2023, 5, 15}, {12, 30, 45.123456}},
-            <<"timetz">> => {{15, 30, 45}, -10800},
-            <<"uuid">> => <<"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11">>,
-            <<"varchar">> => <<"example">>
-        }},
-        ReplData1
-    ),
+    Row1 = #{
+        <<"bool">> => true,
+        <<"bytea">> => <<"POSTGRES">>,
+        <<"char">> => 65,
+        <<"date">> => {2023,5,15},
+        <<"float4">> => 1.2345679,
+        <<"float8">> => 1.2345678901234567,
+        <<"int2">> => 32767,
+        <<"int4">> => 2147483647,
+        <<"int8">> => 9223372036854775807,
+        <<"json">> => #{
+            <<"active">> => true,
+            <<"age">> => 30,
+            <<"name">> => <<"Alice">>
+        },
+        <<"jsonb">> => #{
+            <<"active">> => false,
+            <<"age">> => 25,
+            <<"name">> => <<"Bob">>
+        },
+        <<"jsonb_array">> => null,
+        <<"text">> => <<"This is a sample text string">>,
+        <<"time">> => {15, 30, 45.123456},
+        <<"timestamp">> => {{2023, 5, 15}, {15, 30, 45}},
+        <<"timestamptz">> => {{2023, 5, 15}, {12, 30, 45.123456}},
+        <<"timetz">> => {{15, 30, 45}, -10800},
+        <<"uuid">> => <<"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11">>,
+        <<"varchar">> => <<"example">>
+    },
+    ?assertEqual({<<"t1">>, insert, Row1, #{}}, ReplData1),
     %% UPDATE test
     {ok, 1} = epg_pool:query(default_pool, "UPDATE t1 SET jsonb_array = ARRAY[
         ARRAY[
@@ -111,52 +109,57 @@ wal_reader_base_test(_C) ->
     ),
     {ok, [ReplData2]} = await_replication(),
     ?assertEqual(
-        {<<"t1">>, update,#{
-            <<"bool">> => true,
-            <<"bytea">> => <<"POSTGRES">>,
-            <<"char">> => 65,
-            <<"date">> => {2023,5,15},
-            <<"float4">> => 1.2345679,
-            <<"float8">> => 1.2345678901234567,
-            <<"int2">> => 32767,
-            <<"int4">> => 2147483647,
-            <<"int8">> => 9223372036854775807,
-            <<"json">> => #{
-                <<"active">> => true,
-                <<"age">> => 30,
-                <<"name">> => <<"Alice">>
-            },
-            <<"jsonb">> => #{
-                <<"active">> => false,
-                <<"age">> => 25,
-                <<"name">> => <<"Bob">>
-            },
-            <<"jsonb_array">> => [
-                [
-                    #{<<"age">> => 30,<<"name">> => <<"Alice">>},
-                    #{<<"age">> => 25,<<"name">> => <<"Bob">>},
-                    null
+        {
+            <<"t1">>,
+            update,
+            #{
+                <<"bool">> => true,
+                <<"bytea">> => <<"POSTGRES">>,
+                <<"char">> => 65,
+                <<"date">> => {2023,5,15},
+                <<"float4">> => 1.2345679,
+                <<"float8">> => 1.2345678901234567,
+                <<"int2">> => 32767,
+                <<"int4">> => 2147483647,
+                <<"int8">> => 9223372036854775807,
+                <<"json">> => #{
+                    <<"active">> => true,
+                    <<"age">> => 30,
+                    <<"name">> => <<"Alice">>
+                },
+                <<"jsonb">> => #{
+                    <<"active">> => false,
+                    <<"age">> => 25,
+                    <<"name">> => <<"Bob">>
+                },
+                <<"jsonb_array">> => [
+                    [
+                        #{<<"age">> => 30,<<"name">> => <<"Alice">>},
+                        #{<<"age">> => 25,<<"name">> => <<"Bob">>},
+                        null
+                    ],
+                    [
+                        #{<<"price">> => 999.99, <<"product">> => <<"Laptop">>},
+                        null,
+                        #{<<"accessories">> => [<<"case">>,<<"charger">>], <<"product">> => <<"Phone">>}
+                    ]
                 ],
-                [
-                    #{<<"price">> => 999.99, <<"product">> => <<"Laptop">>},
-                    null,
-                    #{<<"accessories">> => [<<"case">>,<<"charger">>], <<"product">> => <<"Phone">>}
-                ]
-            ],
-            <<"text">> => <<"This is a sample text string">>,
-            <<"time">> => {15, 30, 45.123456},
-            <<"timestamp">> => {{2023, 5, 15}, {15, 30, 45}},
-            <<"timestamptz">> => {{2023, 5, 15}, {12, 30, 45.123456}},
-            <<"timetz">> => {{15, 30, 45}, -10800},
-            <<"uuid">> => <<"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11">>,
-            <<"varchar">> => <<"example">>
-        }},
+                <<"text">> => <<"This is a sample text string">>,
+                <<"time">> => {15, 30, 45.123456},
+                <<"timestamp">> => {{2023, 5, 15}, {15, 30, 45}},
+                <<"timestamptz">> => {{2023, 5, 15}, {12, 30, 45.123456}},
+                <<"timetz">> => {{15, 30, 45}, -10800},
+                <<"uuid">> => <<"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11">>,
+                <<"varchar">> => <<"example">>
+            },
+            Row1
+        },
         ReplData2
     ),
     %% DELETE test
     {ok, 1} = epg_pool:query(default_pool, "DELETE FROM t1 where int2 = 32767"),
     {ok, [ReplData3]} = await_replication(),
-    {<<"t1">>, delete, #{<<"int2">> := 32767}} = ReplData3,
+    {<<"t1">>, delete, #{<<"int2">> := 32767}, #{}} = ReplData3,
     _ = unmock_subscriber(),
     {ok, _, _} = epg_pool:query(default_pool, "TRUNCATE TABLE t1"),
     epg_wal_reader:subscription_delete(Reader),
@@ -200,8 +203,8 @@ wal_persistent_slot_test(_C) ->
         end
     ),
     {ok, [
-        {<<"t2">>, insert, #{<<"bytea">> := <<"BYTES1">>}},
-        {<<"t2">>, update, #{<<"bytea">> := <<"BYTES2">>}}
+        {<<"t2">>, insert, #{<<"bytea">> := <<"BYTES1">>}, _},
+        {<<"t2">>, update, #{<<"bytea">> := <<"BYTES2">>}, _}
     ]} = await_replication(),
     %% stop wal_reader and insert/update data
     ok = epg_wal_reader:subscription_delete(Reader1),
@@ -214,10 +217,10 @@ wal_persistent_slot_test(_C) ->
     {error, not_replicated} = await_replication(),
     %% start wal_reader, check data received
     {ok, Reader2} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication], ReplOpts),
-    {ok, [{<<"t2">>, update, #{<<"bytea">> := <<"BYTES3">>}}]} = await_replication(),
-    {ok, [{<<"t2">>, insert, #{<<"int2">> := 2, <<"varchar">> := <<"example2">>}}]} = await_replication(),
-    {ok, [{<<"t2">>, insert, #{<<"int2">> := 3, <<"varchar">> := <<"example3">>}}]} = await_replication(),
-    {ok, [{<<"t2">>, insert, #{<<"int2">> := 4, <<"varchar">> := <<"example4">>}}]} = await_replication(),
+    {ok, [{<<"t2">>, update, #{<<"bytea">> := <<"BYTES3">>}, #{<<"bytea">> := <<"BYTES2">>}}]} = await_replication(),
+    {ok, [{<<"t2">>, insert, #{<<"int2">> := 2, <<"varchar">> := <<"example2">>}, #{}}]} = await_replication(),
+    {ok, [{<<"t2">>, insert, #{<<"int2">> := 3, <<"varchar">> := <<"example3">>}, #{}}]} = await_replication(),
+    {ok, [{<<"t2">>, insert, #{<<"int2">> := 4, <<"varchar">> := <<"example4">>}, #{}}]} = await_replication(),
     ok = epg_wal_reader:subscription_delete(Reader2),
     _ = unmock_subscriber(),
     ok.

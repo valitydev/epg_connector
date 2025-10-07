@@ -109,15 +109,21 @@ handle_call({pgoutput_msg, _StartLSN, EndLSN, #relation_msg{} = RelationInfo}, _
     },
     {reply, {ok, CommitedLSN}, NewState};
 handle_call({pgoutput_msg, _StartLSN, EndLSN, #row_msg{} = RowMsg}, _From, State) ->
-    #row_msg{relation_id = Relidentifier, msg_type = MsgType, columns = ColumnsValues} = RowMsg,
+    #row_msg{
+        relation_id = Relidentifier,
+        msg_type = MsgType,
+        columns = ColumnsValues,
+        old_columns = OldColumnsValues
+    } = RowMsg,
     #{tables := Tables, rows := Rows, last_commited_lsn := CommitedLSN} = State,
     RelationInfo = maps:get(Relidentifier, Tables),
     ColumnsInfo = RelationInfo#relation_msg.columns,
     TableName = RelationInfo#relation_msg.name,
     Row = aggregate_row(ColumnsInfo, ColumnsValues),
+    OldRow = aggregate_row(ColumnsInfo, OldColumnsValues),
     NewState = State#{
         last_processed_lsn => EndLSN,
-        rows => [{TableName, MsgType, Row} | Rows]
+        rows => [{TableName, MsgType, Row, OldRow} | Rows]
     },
     {reply, {ok, CommitedLSN}, NewState};
 handle_call(_Request, _From, #{last_commited_lsn := CommitedLSN} = State) ->
@@ -231,6 +237,8 @@ connect(#{db_opts := #{database := DB} = DbOpts} = State) ->
             {error, not_connected}
     end.
 
+aggregate_row(_ColumnsInfo, undefined) ->
+    #{};
 aggregate_row(ColumnsInfo, ColumnsValues) ->
     {Row, []} = lists:foldl(
         fun
