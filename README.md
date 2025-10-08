@@ -170,7 +170,7 @@ Configure your databases and connection pools in your `sys.config` file:
        replication => "database"
    },
 
-   epg_wal_reader:subscription_create(
+   epg_wal_reader:subscribe(
        user_replication_handler,  % Callback module
        DbOpts,                    % Database connection options
        "myapp_slot",              % Replication slot name
@@ -259,7 +259,7 @@ start() ->
 
     Options = #{slot_type => persistent},
 
-    epg_wal_reader:subscription_create(
+    epg_wal_reader:subscribe(
         {?MODULE, self()},
         DbOpts,
         "order_replication_slot",

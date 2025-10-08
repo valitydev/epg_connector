@@ -6,9 +6,9 @@
 -include("epg_oids.hrl").
 -include_lib("epgsql/include/epgsql.hrl").
 
--export([subscription_create/4]).
--export([subscription_create/5]).
--export([subscription_delete/1]).
+-export([subscribe/4]).
+-export([subscribe/5]).
+-export([unsubscribe/1]).
 -export([handle_x_log_data/4]).
 
 -export([parse_array/1]).
@@ -49,10 +49,10 @@
     slot_type => temporary
 }).
 
-subscription_create(Subscriber, DbOpts, ReplSlot, ListPublications) ->
-    subscription_create(Subscriber, DbOpts, ReplSlot, ListPublications, ?DEFAULT_REPL_OPTS).
+subscribe(Subscriber, DbOpts, ReplSlot, ListPublications) ->
+    subscribe(Subscriber, DbOpts, ReplSlot, ListPublications, ?DEFAULT_REPL_OPTS).
 
-subscription_create(Subscriber, DbOpts, ReplSlot, ListPublications, Opts) ->
+subscribe(Subscriber, DbOpts, ReplSlot, ListPublications, Opts) ->
     ChildSpec = #{
         id => ReplSlot,
         start => {?MODULE, start_link, [Subscriber, DbOpts, ReplSlot, ListPublications, Opts]},
@@ -60,7 +60,7 @@ subscription_create(Subscriber, DbOpts, ReplSlot, ListPublications, Opts) ->
     },
     supervisor:start_child(epg_connector_sup, ChildSpec).
 
-subscription_delete(Ref) ->
+unsubscribe(Ref) ->
     gen_server:cast(Ref, stop).
 
 start_link(Subscriber, DbOpts, ReplSlot, ListPublications, Opts) ->

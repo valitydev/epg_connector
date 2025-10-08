@@ -37,7 +37,7 @@ wal_reader_base_test(_C) ->
     ReplSlot = "test_repl_slot",
     DbOpts = epg_ct_hook:db_opts(),
     Subscriber = {epg_mock_subscriber, self()},
-    {ok, Reader} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication]),
+    {ok, Reader} = epg_wal_reader:subscribe(Subscriber, DbOpts, ReplSlot, [Publication]),
     %% INSERT test
     {ok, 1} = epg_pool:query(default_pool, "INSERT INTO t1 (
       bool, int2, int4, int8, float4, float8, char, varchar, text, bytea,
@@ -162,7 +162,7 @@ wal_reader_base_test(_C) ->
     {<<"t1">>, delete, #{<<"int2">> := 32767}, #{}} = ReplData3,
     _ = unmock_subscriber(),
     {ok, _, _} = epg_pool:query(default_pool, "TRUNCATE TABLE t1"),
-    epg_wal_reader:subscription_delete(Reader),
+    epg_wal_reader:unsubscribe(Reader),
     ok.
 
 -spec wal_connection_lost_test(_) -> _.
@@ -172,13 +172,13 @@ wal_connection_lost_test(_C) ->
     ReplSlot = "test_repl_slot",
     DbOpts = epg_ct_hook:db_opts(),
     Subscriber = {epg_mock_subscriber, self()},
-    {ok, Reader} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication]),
+    {ok, Reader} = epg_wal_reader:subscribe(Subscriber, DbOpts, ReplSlot, [Publication]),
     {ok, ReplConnection} = gen_server:call(Reader, get_connection),
     ok = epgsql:close(ReplConnection),
     {ok, _} = await_stop_replication(),
     ?assertEqual(false, erlang:is_process_alive(Reader)),
-    {ok, Reader2} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication]),
-    ok = epg_wal_reader:subscription_delete(Reader2),
+    {ok, Reader2} = epg_wal_reader:subscribe(Subscriber, DbOpts, ReplSlot, [Publication]),
+    ok = epg_wal_reader:unsubscribe(Reader2),
     timer:sleep(100),
     ?assertEqual(false, erlang:is_process_alive(Reader2)),
     _ = unmock_subscriber(),
@@ -192,7 +192,7 @@ wal_persistent_slot_test(_C) ->
     DbOpts = epg_ct_hook:db_opts(),
     Subscriber = {epg_mock_subscriber, self()},
     ReplOpts = #{slot_type => persistent},
-    {ok, Reader1} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication], ReplOpts),
+    {ok, Reader1} = epg_wal_reader:subscribe(Subscriber, DbOpts, ReplSlot, [Publication], ReplOpts),
     {ok, _} = epg_pool:transaction(
         default_pool,
         fun(Conn) ->
@@ -207,7 +207,7 @@ wal_persistent_slot_test(_C) ->
         {<<"t2">>, update, #{<<"bytea">> := <<"BYTES2">>}, _}
     ]} = await_replication(),
     %% stop wal_reader and insert/update data
-    ok = epg_wal_reader:subscription_delete(Reader1),
+    ok = epg_wal_reader:unsubscribe(Reader1),
     timer:sleep(100),
     {ok, _} = epg_pool:query(default_pool, "UPDATE t2 SET bytea = $1 WHERE int2 = 1", [<<"BYTES3">>]),
     {ok, _} = epg_pool:query(default_pool, "INSERT INTO t2 (int2, varchar) VALUES (2, 'example2')"),
@@ -216,12 +216,12 @@ wal_persistent_slot_test(_C) ->
     %% check not replicated
     {error, not_replicated} = await_replication(),
     %% start wal_reader, check data received
-    {ok, Reader2} = epg_wal_reader:subscription_create(Subscriber, DbOpts, ReplSlot, [Publication], ReplOpts),
+    {ok, Reader2} = epg_wal_reader:subscribe(Subscriber, DbOpts, ReplSlot, [Publication], ReplOpts),
     {ok, [{<<"t2">>, update, #{<<"bytea">> := <<"BYTES3">>}, #{<<"bytea">> := <<"BYTES2">>}}]} = await_replication(),
     {ok, [{<<"t2">>, insert, #{<<"int2">> := 2, <<"varchar">> := <<"example2">>}, #{}}]} = await_replication(),
     {ok, [{<<"t2">>, insert, #{<<"int2">> := 3, <<"varchar">> := <<"example3">>}, #{}}]} = await_replication(),
     {ok, [{<<"t2">>, insert, #{<<"int2">> := 4, <<"varchar">> := <<"example4">>}, #{}}]} = await_replication(),
-    ok = epg_wal_reader:subscription_delete(Reader2),
+    ok = epg_wal_reader:unsubscribe(Reader2),
     _ = unmock_subscriber(),
     ok.
 
