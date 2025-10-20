@@ -6,13 +6,14 @@
 -include("epg_oids.hrl").
 -include_lib("epgsql/include/epgsql.hrl").
 
--export([subscription_create/4]).
--export([subscription_delete/1]).
+-export([subscribe/4]).
+-export([subscribe/5]).
+-export([unsubscribe/1]).
 -export([handle_x_log_data/4]).
 
 -export([parse_array/1]).
 
--export([start_link/4]).
+-export([start_link/5]).
 -export([
     init/1,
     handle_call/3,
@@ -32,34 +33,49 @@
     publications := [string()],
     tables := map(),
     rows := list(),
-    connection => pid()
+    connection => pid(),
+    options := options(),
+    last_processed_lsn => integer(),
+    last_commited_lsn => integer()
+}.
+
+-type options() :: #{
+    slot_type => temporary | persistent
 }.
 
 -export_type([wal_state/0]).
 
-subscription_create(Subscriber, DbOpts, ReplSlot, ListPublications) ->
+-define(DEFAULT_REPL_OPTS, #{
+    slot_type => temporary
+}).
+
+subscribe(Subscriber, DbOpts, ReplSlot, ListPublications) ->
+    subscribe(Subscriber, DbOpts, ReplSlot, ListPublications, ?DEFAULT_REPL_OPTS).
+
+subscribe(Subscriber, DbOpts, ReplSlot, ListPublications, Opts) ->
     ChildSpec = #{
         id => ReplSlot,
-        start => {?MODULE, start_link, [Subscriber, DbOpts, ReplSlot, ListPublications]},
+        start => {?MODULE, start_link, [Subscriber, DbOpts, ReplSlot, ListPublications, Opts]},
         restart => temporary
     },
     supervisor:start_child(epg_connector_sup, ChildSpec).
 
-subscription_delete(Ref) ->
+unsubscribe(Ref) ->
     gen_server:cast(Ref, stop).
 
-start_link(Subscriber, DbOpts, ReplSlot, ListPublications) ->
-    gen_server:start_link({local, reg_name(ReplSlot)}, ?MODULE, [Subscriber, DbOpts, ReplSlot, ListPublications], []).
+start_link(Subscriber, DbOpts, ReplSlot, ListPublications, Opts) ->
+    Args = [Subscriber, DbOpts, ReplSlot, ListPublications, Opts],
+    gen_server:start_link({local, reg_name(ReplSlot)}, ?MODULE, Args, []).
 
 reg_name(ReplSlot) ->
     erlang:list_to_atom(lists:concat(["repl_slot_", ReplSlot])).
 
 handle_replication_msg(Handler, Msg) ->
-    gen_server:cast(Handler, Msg).
+    gen_server:call(Handler, Msg, infinity).
 
 %% gen_server callbacks
 -spec init(_) -> {ok, wal_state()}.
-init([Subscriber, DbOpts, ReplSlot, ListPublications]) ->
+init([Subscriber, DbOpts, ReplSlot, ListPublications, Opts]) ->
     erlang:process_flag(trap_exit, true),
     State0 = #{
         subscriber => Subscriber,
@@ -67,44 +83,52 @@ init([Subscriber, DbOpts, ReplSlot, ListPublications]) ->
         db_opts => DbOpts,
         publications => ListPublications,
         tables => #{},
-        rows => []
+        rows => [],
+        options => Opts
     },
-    {ok, State} = connect(State0),
-    ok = create_replication_slot(State),
-    ok = start_replication(State),
-    {ok, State}.
+    {ok, State1} = connect(State0),
+    ok = create_replication_slot(State1),
+    {ok, State2} = start_replication(State1),
+    {ok, State2}.
 
 handle_call(get_connection, _From, State) ->
+    %% for tests only
     {reply, {ok, maps:get(connection, State, undefined)}, State};
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
-
-handle_cast({pgoutput_msg, _StartLSN, EndLSN, #commit_msg{}}, #{rows := []} = State) ->
-    {noreply, State#{last_processed_lsn => EndLSN}};
-handle_cast({pgoutput_msg, _StartLSN, EndLSN, #commit_msg{}}, #{rows := Rows} = State) ->
+handle_call({pgoutput_msg, _StartLSN, EndLSN, #commit_msg{}}, _From, #{rows := []} = State) ->
+    {reply, {ok, EndLSN}, State#{last_processed_lsn => EndLSN, last_commited_lsn => EndLSN}};
+handle_call({pgoutput_msg, _StartLSN, EndLSN, #commit_msg{}}, _From, #{rows := Rows} = State) ->
     #{subscriber := {Mod, Ref}} = State,
-    ok = Mod:handle_replication_data(Ref, Rows),
-    {noreply, State#{last_processed_lsn => EndLSN, rows => []}};
-handle_cast({pgoutput_msg, _StartLSN, EndLSN, #relation_msg{} = RelationInfo}, State) ->
+    ok = Mod:handle_replication_data(Ref, lists:reverse(Rows)),
+    {reply, {ok, EndLSN}, State#{last_processed_lsn => EndLSN, last_commited_lsn => EndLSN, rows => []}};
+handle_call({pgoutput_msg, _StartLSN, EndLSN, #relation_msg{} = RelationInfo}, _From, State) ->
     Relidentifier = RelationInfo#relation_msg.id,
-    #{tables := Tables} = State,
+    #{last_commited_lsn := CommitedLSN, tables := Tables} = State,
     NewState = State#{
         tables => Tables#{Relidentifier => RelationInfo},
         last_processed_lsn => EndLSN
     },
-    {noreply, NewState};
-handle_cast({pgoutput_msg, _StartLSN, EndLSN, #row_msg{} = RowMsg}, State) ->
-    #row_msg{relation_id = Relidentifier, msg_type = MsgType, columns = ColumnsValues} = RowMsg,
-    #{tables := Tables, rows := Rows} = State,
+    {reply, {ok, CommitedLSN}, NewState};
+handle_call({pgoutput_msg, _StartLSN, EndLSN, #row_msg{} = RowMsg}, _From, State) ->
+    #row_msg{
+        relation_id = Relidentifier,
+        msg_type = MsgType,
+        columns = ColumnsValues,
+        old_columns = OldColumnsValues
+    } = RowMsg,
+    #{tables := Tables, rows := Rows, last_commited_lsn := CommitedLSN} = State,
     RelationInfo = maps:get(Relidentifier, Tables),
     ColumnsInfo = RelationInfo#relation_msg.columns,
     TableName = RelationInfo#relation_msg.name,
     Row = aggregate_row(ColumnsInfo, ColumnsValues),
+    OldRow = aggregate_row(ColumnsInfo, OldColumnsValues),
     NewState = State#{
         last_processed_lsn => EndLSN,
-        rows => [{TableName, MsgType, Row} | Rows]
+        rows => [{TableName, MsgType, Row, OldRow} | Rows]
     },
-    {noreply, NewState};
+    {reply, {ok, CommitedLSN}, NewState};
+handle_call(_Request, _From, #{last_commited_lsn := CommitedLSN} = State) ->
+    {reply, {ok, CommitedLSN}, State}.
+
 handle_cast(stop, #{connection := Connection}) ->
     _ = epgsql:close(Connection),
     exit(normal);
@@ -131,8 +155,8 @@ handle_x_log_data(_StartLSN, EndLSN, <<>>, CallbackState) ->
     {ok, EndLSN, EndLSN, CallbackState};
 handle_x_log_data(StartLSN, EndLSN, Data, #{handler := Handler} = CallbackState) ->
     {ok, Message} = epg_pgoutput_decoder:decode(Data),
-    handle_replication_msg(Handler, {pgoutput_msg, StartLSN, EndLSN, Message}),
-    {ok, EndLSN, EndLSN, CallbackState}.
+    {ok, CommitedLSN} = handle_replication_msg(Handler, {pgoutput_msg, StartLSN, EndLSN, Message}),
+    {ok, CommitedLSN, CommitedLSN, CallbackState}.
 
 %% Internal functions
 start_replication(#{connection := Connection} = State) ->
@@ -152,42 +176,69 @@ start_replication(#{connection := Connection} = State) ->
     ),
     CallbackModule = ?MODULE,
     CallbackInitState = #{handler => self()},
-    StartLSN = "0/0",
+    WalPosition = get_wal_position(State),
     %% raw text
     PluginOpts = "proto_version '1', publication_names '" ++ Pubs ++ "'",
-    ReplicationOpts = [{temporary, true}],
-    epgsql:start_replication(
+    ReplicationOpts = #{align_lsn => true},
+    ok = epgsql:start_replication(
         Connection,
         ReplSlot,
         CallbackModule,
         CallbackInitState,
-        StartLSN,
+        WalPosition,
         PluginOpts,
         ReplicationOpts
-    ).
+    ),
+    {ok, State#{last_commited_lsn => position_to_lsn(WalPosition)}}.
 
-create_replication_slot(#{repl_slot := ReplSlot, connection := Connection}) ->
-    case epgsql:squery(Connection, ["CREATE_REPLICATION_SLOT ", ReplSlot, " TEMPORARY LOGICAL pgoutput"]) of
+create_replication_slot(#{repl_slot := ReplSlot, connection := Connection, options := Opts}) ->
+    SlotType = slot_type_string(Opts),
+    case epgsql:squery(Connection, ["CREATE_REPLICATION_SLOT ", ReplSlot, SlotType, " LOGICAL pgoutput"]) of
         {ok, _, _} ->
             ok;
         {error, #error{codename = duplicate_object}} ->
             ok
     end.
 
+get_wal_position(#{options := #{slot_type := persistent}, repl_slot := ReplSlot, db_opts := DbOpts}) ->
+    {ok, Connection} = epgsql:connect(DbOpts),
+    {ok, _, [{BinPos}]} = epgsql:equery(
+        Connection,
+        "SELECT \"confirmed_flush_lsn\" FROM pg_replication_slots WHERE \"slot_name\" = $1",
+        [ReplSlot]
+    ),
+    epgsql:close(Connection),
+    unicode:characters_to_list(BinPos);
+get_wal_position(_) ->
+    "0/0".
+
+position_to_lsn(WalPosition) ->
+    Hex = [H || H <- WalPosition, H =/= $/],
+    {ok, [LSN], _} = io_lib:fread("~16u", Hex),
+    LSN.
+
+slot_type_string(#{slot_type := persistent}) ->
+    " ";
+slot_type_string(_) ->
+    " TEMPORARY ".
+
 connect(#{db_opts := #{database := DB} = DbOpts} = State) ->
+    %% connection for replication only
     try epgsql:connect(DbOpts#{replication => "database"}) of
         {ok, Connection} ->
             logger:info("db replication connection established. database: ~p", [DB]),
             {ok, State#{connection => Connection}};
-        {error, _Reason} ->
-            %% TODO log it
+        {error, Reason} ->
+            logger:error("Can`t establish replication connection with error: ~p", [Reason]),
             {error, not_connected}
     catch
-        _:_ ->
-            %% TODO log it
+        Ex:Er:St ->
+            logger:error("Can`t establish replication connection with exception: ~p", [[Ex, Er, St]]),
             {error, not_connected}
     end.
 
+aggregate_row(_ColumnsInfo, undefined) ->
+    #{};
 aggregate_row(ColumnsInfo, ColumnsValues) ->
     {Row, []} = lists:foldl(
         fun

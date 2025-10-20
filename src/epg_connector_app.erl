@@ -38,6 +38,8 @@
 -export_type([databases/0]).
 -export_type([pools/0]).
 -export_type([db_configs/0]).
+-export_type([db_opts/0]).
+-export_type([db_ref/0]).
 
 start(_StartType, _StartArgs) ->
     _ = maybe_start_canal(application:get_all_env(canal)),

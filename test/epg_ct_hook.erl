@@ -16,6 +16,7 @@ pre_init_per_suite(_SuiteName, Config, State) ->
 
 terminate(_State) ->
     {ok, _, _} = epg_pool:query(default_pool, "TRUNCATE TABLE t1"),
+    {ok, _, _} = epg_pool:query(default_pool, "TRUNCATE TABLE t2"),
     ok.
 %%
 
@@ -86,11 +87,25 @@ init_db() ->
         uuid uuid,
         jsonb_array jsonb[][])"
     ),
+    {ok, _, _} = epg_pool:query(default_pool, "CREATE TABLE IF NOT EXISTS t2 (
+        int2 int2 PRIMARY KEY,
+        varchar varchar(12),
+        text text,
+        bytea bytea,
+        jsonb jsonb)"
+    ),
     case epg_pool:query(default_pool, "CREATE PUBLICATION \"default/default\" FOR TABLE t1") of
         {ok, _, _} ->
             ok;
         {error, #error{codename = duplicate_object}} ->
             ok
     end,
+    case epg_pool:query(default_pool, "CREATE PUBLICATION \"default/persistent\" FOR TABLE t2") of
+        {ok, _, _} ->
+            ok;
+        {error, #error{codename = duplicate_object}} ->
+            ok
+    end,
     {ok, _, _} = epg_pool:query(default_pool, "ALTER TABLE t1 REPLICA IDENTITY FULL"),
+    {ok, _, _} = epg_pool:query(default_pool, "ALTER TABLE t2 REPLICA IDENTITY FULL"),
     ok.
