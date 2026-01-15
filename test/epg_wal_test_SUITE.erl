@@ -176,6 +176,7 @@ wal_connection_lost_test(_C) ->
     {ok, ReplConnection} = gen_server:call(Reader, get_connection),
     ok = epgsql:close(ReplConnection),
     {ok, _} = await_stop_replication(),
+    timer:sleep(100),
     ?assertEqual(false, erlang:is_process_alive(Reader)),
     {ok, Reader2} = epg_wal_reader:subscribe(Subscriber, DbOpts, ReplSlot, [Publication]),
     ok = epg_wal_reader:unsubscribe(Reader2),
