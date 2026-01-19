@@ -413,7 +413,7 @@ connect_ephemeral(
         ephemerals = Ephemerals
     } = State
 ) ->
-    try epgsql:connect(Params) of
+    try epgsql:connect(epg_connector_app:unwrap_secret(Params)) of
         {ok, Connection} ->
             logger:info("db dynamic connection established. pool: ~p. database: ~p", [Pool, DB]),
             OwnerRef = erlang:monitor(process, Owner),

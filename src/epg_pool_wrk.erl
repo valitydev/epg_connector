@@ -61,7 +61,7 @@ reconnect_timer(Timeout) ->
     erlang:start_timer(Timeout, self(), reconnect).
 
 connect(#epg_pool_wrk_state{pool = Pool, params = #{database := DB} = Params} = State) ->
-    try epgsql:connect(Params) of
+    try epgsql:connect(epg_connector_app:unwrap_secret(Params)) of
         {ok, Connection} ->
             epg_pool_mgr:add(Pool, self(), Connection),
             logger:info("db connection established. pool: ~p. database: ~p", [Pool, DB]),

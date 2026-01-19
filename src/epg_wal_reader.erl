@@ -201,7 +201,7 @@ create_replication_slot(#{repl_slot := ReplSlot, connection := Connection, optio
     end.
 
 get_wal_position(#{options := #{slot_type := persistent}, repl_slot := ReplSlot, db_opts := DbOpts}) ->
-    {ok, Connection} = epgsql:connect(DbOpts),
+    {ok, Connection} = epgsql:connect(epg_connector_app:unwrap_secret(DbOpts)),
     {ok, _, [{BinPos}]} = epgsql:equery(
         Connection,
         "SELECT \"confirmed_flush_lsn\" FROM pg_replication_slots WHERE \"slot_name\" = $1",
@@ -222,8 +222,9 @@ slot_type_string(#{slot_type := persistent}) ->
 slot_type_string(_) ->
     " TEMPORARY ".
 
-connect(#{db_opts := #{database := DB} = DbOpts} = State) ->
+connect(#{db_opts := #{database := DB} = DbOpts0} = State) ->
     %% connection for replication only
+    DbOpts = epg_connector_app:unwrap_secret(DbOpts0),
     try epgsql:connect(DbOpts#{replication => "database"}) of
         {ok, Connection} ->
             logger:info("db replication connection established. database: ~p", [DB]),
