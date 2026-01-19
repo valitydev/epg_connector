@@ -26,7 +26,7 @@ db_opts() ->
         port => 5432,
         database => "connector_db",
         username => "connector",
-        password => "connector"
+        password => fun() -> "connector" end
     }.
 
 %%
