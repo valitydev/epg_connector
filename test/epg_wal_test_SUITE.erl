@@ -108,54 +108,47 @@ wal_reader_base_test(_C) ->
       ] WHERE int2 = 32767"
     ),
     {ok, [ReplData2]} = await_replication(),
-    ?assertEqual(
-        {
-            <<"t1">>,
-            update,
-            #{
-                <<"bool">> => true,
-                <<"bytea">> => <<"POSTGRES">>,
-                <<"char">> => 65,
-                <<"date">> => {2023,5,15},
-                <<"float4">> => 1.2345679,
-                <<"float8">> => 1.2345678901234567,
-                <<"int2">> => 32767,
-                <<"int4">> => 2147483647,
-                <<"int8">> => 9223372036854775807,
-                <<"json">> => #{
-                    <<"active">> => true,
-                    <<"age">> => 30,
-                    <<"name">> => <<"Alice">>
-                },
-                <<"jsonb">> => #{
-                    <<"active">> => false,
-                    <<"age">> => 25,
-                    <<"name">> => <<"Bob">>
-                },
-                <<"jsonb_array">> => [
-                    [
-                        #{<<"age">> => 30,<<"name">> => <<"Alice">>},
-                        #{<<"age">> => 25,<<"name">> => <<"Bob">>},
-                        null
-                    ],
-                    [
-                        #{<<"price">> => 999.99, <<"product">> => <<"Laptop">>},
-                        null,
-                        #{<<"accessories">> => [<<"case">>,<<"charger">>], <<"product">> => <<"Phone">>}
-                    ]
-                ],
-                <<"text">> => <<"This is a sample text string">>,
-                <<"time">> => {15, 30, 45.123456},
-                <<"timestamp">> => {{2023, 5, 15}, {15, 30, 45}},
-                <<"timestamptz">> => {{2023, 5, 15}, {12, 30, 45.123456}},
-                <<"timetz">> => {{15, 30, 45}, -10800},
-                <<"uuid">> => <<"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11">>,
-                <<"varchar">> => <<"example">>
-            },
-            Row1
+    Row2 = #{
+        <<"bool">> => true,
+        <<"bytea">> => <<"POSTGRES">>,
+        <<"char">> => 65,
+        <<"date">> => {2023,5,15},
+        <<"float4">> => 1.2345679,
+        <<"float8">> => 1.2345678901234567,
+        <<"int2">> => 32767,
+        <<"int4">> => 2147483647,
+        <<"int8">> => 9223372036854775807,
+        <<"json">> => #{
+            <<"active">> => true,
+            <<"age">> => 30,
+            <<"name">> => <<"Alice">>
         },
-        ReplData2
-    ),
+        <<"jsonb">> => #{
+            <<"active">> => false,
+            <<"age">> => 25,
+            <<"name">> => <<"Bob">>
+        },
+        <<"jsonb_array">> => [
+            [
+                #{<<"age">> => 30,<<"name">> => <<"Alice">>},
+                #{<<"age">> => 25,<<"name">> => <<"Bob">>},
+                null
+            ],
+            [
+                #{<<"price">> => 999.99, <<"product">> => <<"Laptop">>},
+                null,
+                #{<<"accessories">> => [<<"case">>,<<"charger">>], <<"product">> => <<"Phone">>}
+            ]
+        ],
+        <<"text">> => <<"This is a sample text string">>,
+        <<"time">> => {15, 30, 45.123456},
+        <<"timestamp">> => {{2023, 5, 15}, {15, 30, 45}},
+        <<"timestamptz">> => {{2023, 5, 15}, {12, 30, 45.123456}},
+        <<"timetz">> => {{15, 30, 45}, -10800},
+        <<"uuid">> => <<"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11">>,
+        <<"varchar">> => <<"example">>
+    },
+    ?assertEqual({<<"t1">>, update, Row2, Row1}, ReplData2),
     %% DELETE test
     {ok, 1} = epg_pool:query(default_pool, "DELETE FROM t1 where int2 = 32767"),
     {ok, [ReplData3]} = await_replication(),

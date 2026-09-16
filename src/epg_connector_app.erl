@@ -77,7 +77,7 @@ maybe_start_canal(_Env) ->
 
 wrap_secrets(Databases) ->
     TokenPath = application:get_env(epg_connector, vault_token_path, ?VAULT_TOKEN_PATH),
-    VaultAuthResult = catch vault_client_auth(TokenPath),
+    VaultAuthResult = vault_client_auth(TokenPath),
     update_env(VaultAuthResult, Databases).
 
 vault_client_auth(TokenPath) ->

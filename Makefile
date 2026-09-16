@@ -13,10 +13,12 @@ DOTENV := $(shell grep -v '^\#' .env)
 # Development images
 DEV_IMAGE_TAG = $(TEST_CONTAINER_NAME)-dev
 DEV_IMAGE_ID = $(file < .image.dev)
+USER_UID:=$(shell id -u)
+USER_GID:=$(shell id -g)
 
 DOCKER ?= docker
 DOCKERCOMPOSE ?= docker-compose
-DOCKERCOMPOSE_W_ENV = DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) -f docker-compose.yml
+DOCKERCOMPOSE_W_ENV = USER_UID=$(USER_UID) USER_GID=$(USER_GID) DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) -f docker-compose.yml
 REBAR ?= rebar3
 TEST_CONTAINER_NAME ?= testrunner
 
@@ -51,7 +53,7 @@ wc-%: dev-image
 	$(DOCKER_RUN) $(DEV_IMAGE_TAG) make $*
 
 wdeps-shell: dev-image
-	$(DOCKERCOMPOSE_RUN) $(TEST_CONTAINER_NAME) su; \
+	$(DOCKERCOMPOSE_RUN) $(TEST_CONTAINER_NAME) bash; \
 	$(DOCKERCOMPOSE_W_ENV) down
 
 wdeps-%: dev-image

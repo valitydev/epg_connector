@@ -17,7 +17,7 @@ services:
     working_dir: $PWD
 
   postgres:
-    image: postgres:15-bookworm
+    image: postgres:18-trixie
     command: -c 'wal_level=logical'
     environment:
       POSTGRES_DB: "connector_db"
