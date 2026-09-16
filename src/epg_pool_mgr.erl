@@ -337,18 +337,18 @@ demonitor_and_close(Connection, Monitors, Ephemerals) when
     erlang:is_map_key(Connection, Monitors)
 ->
     {MRef, NewMonitors} = maps:take(Connection, Monitors),
-    _ = catch erlang:demonitor(MRef),
-    _ = catch epgsql:close(Connection),
+    _ = safe_run(fun() -> erlang:demonitor(MRef) end),
+    _ = safe_run(fun() -> epgsql:close(Connection) end),
     {NewMonitors, Ephemerals};
 demonitor_and_close(Connection, Monitors, Ephemerals) when
     erlang:is_map_key(Connection, Ephemerals)
 ->
     {MRef, NewEphemerals} = maps:take(Connection, Ephemerals),
-    _ = catch erlang:demonitor(MRef),
-    _ = catch epgsql:close(Connection),
+    _ = safe_run(fun() -> erlang:demonitor(MRef) end),
+    _ = safe_run(fun() -> epgsql:close(Connection) end),
     {Monitors, NewEphemerals};
 demonitor_and_close(Connection, Monitors, Ephemerals) ->
-    _ = catch epgsql:close(Connection),
+    _ = safe_run(fun() -> epgsql:close(Connection) end),
     {Monitors, Ephemerals}.
 
 demonitor_owner(Owner, Owners) ->
@@ -372,7 +372,7 @@ cleanup_owners(Connection, Owners) ->
     ),
     case SearchOwner of
         {Owner, OwnRef, Connection} ->
-            _ = catch erlang:demonitor(OwnRef),
+            _ = safe_run(fun() -> erlang:demonitor(OwnRef) end),
             maps:without([Owner], Owners);
         not_found ->
             Owners
@@ -456,7 +456,7 @@ process_nested_checkout(
     } = State
 ) ->
     {{Ref, Conn}, NewOwners} = maps:take(Pid, Owners),
-    _ = catch erlang:demonitor(Ref),
+    _ = safe_run(fun() -> erlang:demonitor(Ref) end),
     NewConns = queue:delete(Conn, Conns),
     {NewMonitors, NewEphemerals} = demonitor_and_close(Conn, Monitors, Ephemerals),
     logger:error("db nested checkout connection. pool: ~p", [Pool]),
@@ -474,12 +474,12 @@ find_request(Requests, Requesters) ->
             {empty, NewRequests, #{}};
         {{value, {Pid, Timestamp, _ReqRef}}, NewRequests} when Timestamp =< Now ->
             {{Ref, _}, NewRequesters} = maps:take(Pid, Requesters),
-            _ = catch erlang:demonitor(Ref),
+            _ = safe_run(fun() -> erlang:demonitor(Ref) end),
             logger:warning("async checkout expired by ~p ms", [Now - Timestamp]),
             find_request(NewRequests, NewRequesters);
         {{value, {Pid, _Timestamp, ReqRef}}, NewRequests} ->
             {{Ref, _, _}, NewRequesters} = maps:take(Pid, Requesters),
-            _ = catch erlang:demonitor(Ref),
+            _ = safe_run(fun() -> erlang:demonitor(Ref) end),
             {Pid, ReqRef, NewRequests, NewRequesters}
     end.
 
@@ -537,4 +537,13 @@ maybe_async_checkout_ephemeral(
                 requests = NewRequests,
                 requesters = NewRequesters
             }
+    end.
+
+safe_run(Fun) ->
+    try Fun() of
+        _Result ->
+            ok
+    catch
+        _:_ ->
+            ok
     end.
